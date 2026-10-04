@@ -17,7 +17,7 @@ Status: work in progress (October 2026). Results are not final.
 3. How far are ready-made browser builds (for example WebLLM q4f16_1) from a full-precision reference?
 4. Do overall accuracy numbers hide answer flips?
 
-See [docs/RESEARCH_PLAN.md](docs/RESEARCH_PLAN.md) for the full plan and the related-work check.
+For a detailed plain-language explanation of the study, read [docs/ABOUT_THE_RESEARCH.md](docs/ABOUT_THE_RESEARCH.md). The working plan and related-work check are in [docs/RESEARCH_PLAN.md](docs/RESEARCH_PLAN.md).
 
 ## Repository layout
 

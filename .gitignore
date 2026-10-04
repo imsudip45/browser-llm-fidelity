@@ -1,0 +1,5 @@
+node_modules/
+data/*.parquet
+logs_*.txt
+*.log
+results/test_*.json

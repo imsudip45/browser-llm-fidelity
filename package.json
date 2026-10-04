@@ -1,0 +1,16 @@
+{
+  "name": "browser-llm-fidelity",
+  "version": "1.0.0",
+  "scripts": {
+    "native": "node run_native.mjs",
+    "serve": "python3 -m http.server 8000 --directory site",
+    "analyze": "python3 analyze.py"
+  },
+  "author": "Sudip Niroula",
+  "license": "MIT",
+  "description": "Does running a small LLM in the browser change its answers? Experiment harness.",
+  "dependencies": {
+    "@huggingface/transformers": "4.3.0"
+  },
+  "type": "module"
+}

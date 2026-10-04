@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Browser LLM Fidelity Runner</title>
+<style>
+  :root { --bg:#f7f6f2; --fg:#1d1d1b; --muted:#6b6a65; --card:#fff; --line:#e3e1da; --acc:#1f5f8b; }
+  * { box-sizing: border-box; }
+  body { margin:0; font: 15px/1.5 system-ui, -apple-system, Segoe UI, sans-serif; background:var(--bg); color:var(--fg); }
+  main { max-width: 860px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  p.sub { color: var(--muted); margin: 0 0 20px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:16px; }
+  .card h2 { font-size:15px; margin:0 0 10px; }
+  label { display:block; font-size:13px; color:var(--muted); margin-bottom:4px; }
+  select, input { width:100%; padding:8px; border:1px solid var(--line); border-radius:6px; font:inherit; background:#fff; }
+  .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap:12px; }
+  button { padding:10px 16px; border:0; border-radius:6px; background:var(--acc); color:#fff; font:inherit; cursor:pointer; }
+  button.secondary { background:#e9e7e0; color:var(--fg); }
+  button:disabled { opacity:.5; cursor:default; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+  pre { background:#f1f0eb; padding:10px; border-radius:6px; overflow:auto; font-size:12px; max-height:260px; white-space:pre-wrap; }
+  .bar { height:8px; background:#ecebe5; border-radius:4px; overflow:hidden; }
+  .bar > div { height:100%; width:0; background:var(--acc); transition: width .2s; }
+  .kv { font-size:13px; }
+  .kv b { display:inline-block; min-width:120px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Browser LLM Fidelity Runner</h1>
+  <p class="sub">Runs the fixed question set (MMLU 200 + GSM8K 100) with greedy decoding and saves every answer to a JSON file.</p>
+
+  <div class="card">
+    <h2>1. GPU detected by this browser</h2>
+    <div id="gpu" class="kv">Checking...</div>
+  </div>
+
+  <div class="card">
+    <h2>2. Setup</h2>
+    <div class="grid">
+      <div>
+        <label for="engine">Engine</label>
+        <select id="engine">
+          <option value="tjs-webgpu">Transformers.js 4.3.0, WebGPU</option>
+          <option value="tjs-wasm">Transformers.js 4.3.0, WASM (CPU)</option>
+          <option value="webllm">WebLLM 0.2.85 (WebGPU)</option>
+        </select>
+      </div>
+      <div>
+        <label for="dtype">Precision / build</label>
+        <select id="dtype"></select>
+      </div>
+      <div>
+        <label for="task">Task</label>
+        <select id="task">
+          <option value="all">All (MMLU 200 + GSM8K 100)</option>
+          <option value="mmlu">MMLU only</option>
+          <option value="gsm8k">GSM8K only</option>
+        </select>
+      </div>
+      <div>
+        <label for="limit">Limit per task (blank = all)</label>
+        <input id="limit" type="number" min="1" placeholder="all" />
+      </div>
+      <div>
+        <label for="label">Run label (e.g. nvidia-chrome)</label>
+        <input id="label" type="text" placeholder="nvidia-chrome" />
+      </div>
+    </div>
+    <div class="row">
+      <button id="run">Start run</button>
+      <button id="stop" class="secondary" disabled>Stop</button>
+      <button id="dl" class="secondary" disabled>Download results</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>3. Progress</h2>
+    <div class="bar"><div id="pbar"></div></div>
+    <div id="status" class="kv" style="margin-top:8px">Idle.</div>
+    <pre id="log"></pre>
+  </div>
+</main>
+<script type="module" src="./app.js"></script>
+</body>
+</html>

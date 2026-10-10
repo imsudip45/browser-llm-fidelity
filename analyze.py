@@ -13,7 +13,7 @@ def load():
     runs = {}
     for f in sorted(glob.glob(os.path.join(RD, "*.json"))):
         try:
-            d = json.load(open(f))
+            d = json.load(open(f, encoding="utf-8"))
         except Exception:
             continue
         if "meta" not in d:
@@ -79,14 +79,20 @@ def main():
                 gpu=(d["meta"].get("gpu") or {}).get("description") or (d["meta"].get("gpu") or {}).get("vendor") or d["meta"].get("device", ""),
             ))
     rows.sort(key=lambda r: (r["task"], r["setup"]))
-    with open(os.path.join(RD, "summary.csv"), "w", newline="") as f:
+    with open(os.path.join(RD, "summary.csv"), "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
         w.writeheader(); w.writerows(rows)
     cols = ["setup", "task", "n", "acc", "ref_acc", "agree", "agree_ci", "flips_c2w", "flips_w2c", "mcnemar_p", "exact_text", "median_first_div_token", "n_diverged", "gpu"]
-    lines = [f"Reference: {REF}", "", "| " + " | ".join(cols) + " |", "|" + "---|" * len(cols)]
+    lines = [
+        f"Reference: {REF}",
+        "Hardware: Laptop with Intel Core i5-13th Gen H processor (i5-13420H), NVIDIA GeForce RTX 2050 (4 GB VRAM), and Intel UHD Graphics",
+        "",
+        "| " + " | ".join(cols) + " |",
+        "|" + "---|" * len(cols),
+    ]
     for r in rows:
         lines.append("| " + " | ".join(str(r[c]) for c in cols) + " |")
-    open(os.path.join(RD, "summary.md"), "w").write("\n".join(lines) + "\n")
+    open(os.path.join(RD, "summary.md"), "w", encoding="utf-8").write("\n".join(lines) + "\n")
     print("\n".join(lines))
 
 if __name__ == "__main__":

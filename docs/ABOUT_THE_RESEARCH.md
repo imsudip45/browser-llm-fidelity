@@ -2,7 +2,7 @@
 
 Working title: "Same Model, Different Answers? Measuring Answer Fidelity of In-Browser LLM Inference Across Frameworks and GPU Vendors"
 
-Lead author: Sudip Niroula
+Authors: Sudip Niroula (lead author), Mandip Pokharel (co-author)
 Status: in progress (October 2026)
 Planned output: preprint on TechRxiv, with code and data in this repository (and an archived copy on Zenodo)
 
@@ -69,7 +69,7 @@ A language model generates text one token at a time. If one early token changes,
 ## 4. Research questions
 
 - RQ1, runtime effect: With exactly the same model file and code, does running in the browser change answers compared with native inference?
-- RQ2, GPU vendor effect: Does the same browser setup give different answers on an NVIDIA GPU (GTX 1650 Ti, RTX 4060) versus an AMD integrated GPU (Radeon in Ryzen 5 4600H)?
+- RQ2, GPU vendor effect: Does the same browser setup give different answers on an NVIDIA discrete GPU (GeForce RTX 2050) versus an Intel integrated GPU (UHD Graphics Gen-12LP) within the same machine?
 - RQ3, deployment effect: How far are ready-made browser model builds (for example WebLLM's 4-bit builds) from a full-precision reference, and how much of that gap is explained by compression rather than by the browser?
 - RQ4, hidden changes: Do overall accuracy numbers hide answer flips? Two setups can have the same accuracy while getting different questions right.
 
@@ -83,7 +83,7 @@ The most common mistake in comparisons like this is to change several things at 
 |---|---|---|---|
 | Native Node.js (CPU) fp32 vs browser WebGPU fp32 | Model file, library version, prompts | Runtime and hardware path | RQ1 |
 | Native Node.js q4 vs browser WASM q4 | Model file, library version, prompts | Runtime (native CPU vs browser CPU) | RQ1 |
-| Browser WebGPU on NVIDIA vs on AMD | Everything except the GPU | GPU vendor | RQ2 |
+| Browser WebGPU on NVIDIA vs on Intel | Everything except the GPU | GPU vendor | RQ2 |
 | Browser fp16 run repeated twice on the same GPU | Everything | Nothing (repeatability check) | Baseline noise |
 | Full-precision reference vs each compressed build (fp16, q4f16, WebLLM q4f16_1, q4f32_1) | Model, prompts | Compression and runtime | RQ3 |
 | Chrome vs Edge on the same GPU (optional) | Everything except the browser | Browser | Minor check |
@@ -113,13 +113,18 @@ The questions were sampled once with a fixed random seed (2026) and saved in `si
 
 ### 5.5 Hardware
 
-| Device | Role |
-|---|---|
-| Lenovo Legion 5: AMD Ryzen 5 4600H, NVIDIA GTX 1650 Ti (4 GB), AMD Radeon integrated graphics, 24 GB RAM | Main browser runs on two GPU vendors in one machine |
-| Co-author's laptop with NVIDIA RTX 4060 | Third GPU, newer NVIDIA generation |
-| Linux CPU machine | Native reference runs |
+| Component | Specification |
+| :--- | :--- |
+| **Device Type** | Laptop (Windows PC) |
+| **Operating System** | Windows 11 (64-bit, Build x86_64) |
+| **Processor (CPU)** | 13th Gen Intel(R) Core(TM) i5-13420H (12 vCPUs, up to 4.60 GHz) |
+| **Discrete GPU (dGPU)** | NVIDIA GeForce RTX 2050 Laptop GPU (4 GB GDDR6 VRAM, Ampere architecture) |
+| **Integrated GPU (iGPU)** | Intel(R) UHD Graphics (Gen-12LP architecture, shared system memory) |
+| **System Memory (RAM)** | 8 GB |
+| **Browser Tested** | Google Chrome 139.0.0.0 (Windows NT 10.0; Win64; x64) |
+| **Host Runtime Baseline** | Node.js v20+ (`native-node-cpu/fp32`) |
 
-Having NVIDIA and AMD GPUs in the same laptop is useful: the CPU, memory, operating system, and browser stay the same while only the GPU changes.
+Having NVIDIA and Intel GPUs in the same laptop is useful: the CPU, memory, operating system, and browser stay the same while only the GPU changes.
 
 ## 6. What we measure
 
@@ -156,7 +161,7 @@ This related-work check was done on 3 October 2026 and will be repeated before p
 
 ## 8. What we will not claim
 
-- We will not claim that results hold for all models, all browsers, or all GPUs. We test one small model (possibly two), Chromium-based browsers, and three consumer GPUs.
+- We will not claim that results hold for all models, all browsers, or all GPUs. We test one small model (possibly two), Chromium-based browsers, and two GPU targets on our testbed (NVIDIA discrete and Intel integrated).
 - We will not claim that one framework is "better". Frameworks use different model builds; we report differences, not rankings.
 - We will not claim causes we did not test directly. If browser and native differ, we can say where and how much, and suggest likely reasons (for example precision of arithmetic), but not prove the exact low-level cause without kernel-level experiments.
 - Benchmark accuracy for a 0.5B model is low in absolute terms. That is expected and not the point; the point is whether answers stay the same.
@@ -179,15 +184,15 @@ This related-work check was done on 3 October 2026 and will be repeated before p
 | Stage | Dates (planned) |
 |---|---|
 | Harness built, native reference started | 3–4 October 2026 |
-| Browser runs on Legion 5 (NVIDIA + AMD), co-author's RTX 4060 runs | October 2026 |
+| Browser runs across NVIDIA discrete and Intel integrated GPUs | October 2026 |
 | Analysis (tables, figures, statistics) | Late October – early November |
 | Writing (6–8 pages, IEEE format) and internal review | November |
 | Preprint on TechRxiv; archive on Zenodo | By 30 November 2026 |
 
-## 12. Authorship and contributions
+## 12. Authorship and contributions (CRediT taxonomy)
 
-- Sudip Niroula: conceptualisation, methodology, software (harness and analysis), investigation (Legion 5 runs), writing.
-- Co-author(s): to be confirmed in writing before drafting, with roles described using the CRediT taxonomy (for example investigation on the RTX 4060, validation of answer extraction, review and editing).
+- **Sudip Niroula (First Author):** Conceptualisation, Methodology, Software (`site/` browser runner, `run_native.mjs`, `analyze.py`, and dataset sampling scripts), Formal Analysis, Visualisation, and Writing – Original Draft & Documentation.
+- **Mandip Pokharel (Second Author):** Investigation (configuring hardware GPU assignments and executing all native CPU, browser WASM, Transformers.js WebGPU, and WebLLM benchmark runs on the Intel Core i5-13420H / NVIDIA GeForce RTX 2050 / Intel UHD Graphics testbed), Data Curation (`results/`), and Validation.
 
 Every listed author must make a real contribution and approve the final paper.
 

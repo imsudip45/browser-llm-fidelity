@@ -1,8 +1,10 @@
+> **Note**: This document reflects the initial study design drafted on 3 October 2026. Final experiments were consolidated onto a single dual-GPU Windows 11 testbed (Intel Core i5-13420H, NVIDIA RTX 2050 4 GB dGPU, and Intel UHD Gen-12LP iGPU) to hold host hardware and OS variables strictly constant; see results/hardware.md and results/summary.md for final executed configurations.
+
 # Research Plan: Does Running a Small LLM in the Browser Change Its Answers?
 
 Working title: "Same Model, Different Answers? Measuring Answer Fidelity of In-Browser LLM Inference Across Frameworks and GPU Vendors"
 
-Author: Sudip Niroula (first author), plus collaborator(s) (see Section 9)
+Authors: Sudip Niroula (first author) and Mandip Pokharel (second author)
 Prepared: 3 October 2026
 Target: preprint on TechRxiv by end of November 2026; code and data on Zenodo and GitHub
 
@@ -98,23 +100,20 @@ Statistics: McNemar's test for paired accuracy differences; bootstrap 95% confid
 
 Laptop notes: GTX 1650 Ti has 4 GB VRAM, so keep models at 1.5B or below in GPU runs. The fp32 reference runs on CPU (Ryzen 5 4600H, 24 GB RAM); a 1.5B model in fp32 needs about 6 GB RAM. Run long jobs overnight on mains power with the laptop cooled.
 
-## 9. Including a friend
+## 9. Collaborator & Co-Authorship
 
-Yes, you can and it helps (third GPU, second pair of hands). Rules to keep it clean:
+Mandip Pokharel is the collaborator and co-author (second author) who executed the full benchmark suite on the dual-GPU (NVIDIA RTX 2050 + Intel UHD) testbed and curated the result logs. Roles are structured following the CRediT taxonomy:
 
-- Agree in writing before starting: author order, who does what, and that you are first author because you designed and lead the study.
-- Every author must make a real contribution (running experiments, analysis, writing or reviewing) and approve the final paper. Lending a laptop alone is an acknowledgement, not authorship.
-- Add a contribution statement in the paper using the CRediT roles, for example: Sudip Niroula: conceptualization, methodology, software, analysis, writing. Friend: investigation (RTX 4060 runs), validation, review and editing.
-- Use a shared private GitHub repository from day one, with the friend's commits visible.
-- In interviews, committees will ask what you did. The contribution statement makes your role clear.
+- **Sudip Niroula (First Author)**: Study design, test harness architecture (`site/` and `run_native.mjs`), analysis pipeline (`analyze.py`), statistical evaluations, and primary drafting.
+- **Mandip Pokharel (Second Author)**: Executed the full benchmark suite across all runtime configurations on the dual-GPU (NVIDIA RTX 2050 + Intel UHD) testbed, curated the result logs in `results/`, and contributed to validation and draft review.
 
-Good split for this project:
+Responsibilities:
 
-| You | Friend |
+| Sudip Niroula | Mandip Pokharel |
 |---|---|
-| Design, test harness, reference runs, browser page | Runs the same harness on RTX 4060 (Chrome, Edge) |
-| Analysis and statistics | Checks a random sample of answer extractions by hand (quality control) |
-| Main writing | Reads and edits drafts; makes figures if interested |
+| Design, test harness, analysis scripts | Benchmark execution across native CPU and browser runs (WASM, WebGPU, WebLLM) on the dual-GPU testbed |
+| Statistical analysis and evaluation | Curating result logs in `results/` and verifying run configurations |
+| Writing original draft and documentation | Output validation, reviewing, and editing drafts |
 
 ## 10. Risks and fixes
 

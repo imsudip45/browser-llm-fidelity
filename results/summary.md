@@ -13,7 +13,10 @@ Hardware: Laptop with Intel Core i5-13th Gen H processor (i5-13420H), NVIDIA GeF
 | browser/webllm/q4f16_1/nvidia-chrome | gsm8k | 100 | 0.19 | 0.29 | 0.19 | [0.120, 0.270] | 16 | 6 | 0.0525 | 0.0 |  | 0 | nvidia |
 | browser/webllm/q4f32_1/intel-chrome | gsm8k | 100 | 0.18 | 0.29 | 0.2 | [0.120, 0.290] | 16 | 5 | 0.0266 | 0.0 |  | 0 | intel |
 | browser/webllm/q4f32_1/nvidia-chrome | gsm8k | 100 | 0.18 | 0.29 | 0.2 | [0.120, 0.290] | 16 | 5 | 0.0266 | 0.0 |  | 0 | nvidia |
+| native-node-cpu/fp16 | gsm8k | 100 | 0.31 | 0.29 | 0.74 | [0.650, 0.820] | 2 | 4 | 0.6875 | 0.54 | 88 | 46 | cpu |
 | native-node-cpu/fp32 | gsm8k | 100 | 0.29 | 0.29 | 1.0 | [1.000, 1.000] | 0 | 0 | 1.0 | 1.0 |  | 0 | cpu |
+| native-node-cpu/q4 | gsm8k | 100 | 0.2 | 0.29 | 0.19 | [0.120, 0.270] | 13 | 4 | 0.049 | 0.0 | 0 | 100 | cpu |
+| native-node-cpu/q4f16 | gsm8k | 100 | 0.24 | 0.29 | 0.23 | [0.150, 0.320] | 10 | 5 | 0.3018 | 0.0 | 0 | 100 | cpu |
 | browser/tjs-wasm/q4/cpu-chrome-check | mmlu | 10 | 0.2 | 0.3 | 0.4 | [0.100, 0.700] | 1 | 0 | 1.0 | 0.3 | 0 | 7 | intel |
 | browser/tjs-webgpu/fp16/intel-chrome | mmlu | 200 | 0.055 | 0.39 | 0.205 | [0.155, 0.260] | 73 | 6 | 0.0 | 0.0 | 0 | 200 | intel |
 | browser/tjs-webgpu/fp16/nvidia-chrome | mmlu | 200 | 0.07 | 0.39 | 0.21 | [0.155, 0.270] | 72 | 8 | 0.0 | 0.005 | 0 | 199 | nvidia |
@@ -24,4 +27,7 @@ Hardware: Laptop with Intel Core i5-13th Gen H processor (i5-13420H), NVIDIA GeF
 | browser/webllm/q4f16_1/nvidia-chrome | mmlu | 200 | 0.43 | 0.39 | 0.5 | [0.430, 0.570] | 22 | 30 | 0.3317 | 0.345 |  | 0 | nvidia |
 | browser/webllm/q4f32_1/intel-chrome | mmlu | 200 | 0.445 | 0.39 | 0.55 | [0.480, 0.620] | 19 | 30 | 0.1524 | 0.37 |  | 0 | intel |
 | browser/webllm/q4f32_1/nvidia-chrome | mmlu | 200 | 0.445 | 0.39 | 0.55 | [0.480, 0.620] | 19 | 30 | 0.1524 | 0.37 |  | 0 | nvidia |
+| native-node-cpu/fp16 | mmlu | 200 | 0.38 | 0.39 | 0.98 | [0.960, 0.995] | 2 | 0 | 0.5 | 0.91 | 1 | 18 | cpu |
 | native-node-cpu/fp32 | mmlu | 200 | 0.39 | 0.39 | 1.0 | [1.000, 1.000] | 0 | 0 | 1.0 | 1.0 |  | 0 | cpu |
+| native-node-cpu/q4 | mmlu | 200 | 0.455 | 0.39 | 0.675 | [0.610, 0.735] | 11 | 24 | 0.041 | 0.485 | 0 | 103 | cpu |
+| native-node-cpu/q4f16 | mmlu | 200 | 0.465 | 0.39 | 0.68 | [0.615, 0.740] | 10 | 25 | 0.0167 | 0.475 | 0 | 105 | cpu |

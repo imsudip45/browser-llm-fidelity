@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "If you use this software or empirical benchmark suite, please cite it as below."
+authors:
+  - family-names: "Niroula"
+    given-names: "Sudip"
+  - family-names: "Pokharel"
+    given-names: "Mandip"
+title: "Same Model, Different Answers? Measuring Answer Fidelity of In-Browser LLM Inference Across Frameworks and GPU Vendors"
+version: 1.0.0
+date-released: 2026-10-28
+license: MIT
+repository-code: "https://github.com/imsudip45/browser-llm-fidelity"

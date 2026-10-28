@@ -8,8 +8,6 @@ This repository contains the full experiment harness for a short empirical study
 - in the browser (Transformers.js with WebGPU or WASM, and WebLLM with WebGPU),
 - across GPU vendors on a single unified host machine (NVIDIA GeForce RTX 2050 4 GB discrete GPU vs. Intel UHD Gen-12LP integrated GPU).
 
-Status: work in progress (October 2026). Results are not final.
-
 ## Research questions
 
 1. With the same weight file, does running in the browser change answers compared with native inference?
@@ -53,11 +51,11 @@ Open http://localhost:8000 in Chrome and follow [RUN_GUIDE.md](RUN_GUIDE.md).
 Analysis:
 
 ```
-pip install scipy
+pip install scipy transformers
 python analyze.py results native-node-cpu/fp32
 ```
 
-## Preliminary Results Summary
+## Benchmark Results Summary
 
 Reference: `native-node-cpu/fp32`  
 Hardware: Laptop with Intel Core i5-13420H, NVIDIA GeForce RTX 2050 (4 GB VRAM), and Intel UHD Graphics (Windows 11, Chrome 139)
@@ -74,7 +72,10 @@ Hardware: Laptop with Intel Core i5-13420H, NVIDIA GeForce RTX 2050 (4 GB VRAM),
 | browser/webllm/q4f16_1/nvidia-chrome | gsm8k | 100 | 0.19 | 0.29 | 0.19 | [0.120, 0.270] | 16 | 6 | 0.0525 | 0.0 | 1 | 100 | nvidia |
 | browser/webllm/q4f32_1/intel-chrome | gsm8k | 100 | 0.18 | 0.29 | 0.2 | [0.120, 0.290] | 16 | 5 | 0.0266 | 0.0 | 1 | 100 | intel |
 | browser/webllm/q4f32_1/nvidia-chrome | gsm8k | 100 | 0.18 | 0.29 | 0.2 | [0.120, 0.290] | 16 | 5 | 0.0266 | 0.0 | 1 | 100 | nvidia |
+| native-node-cpu/fp16 | gsm8k | 100 | 0.31 | 0.29 | 0.74 | [0.650, 0.820] | 2 | 4 | 0.6875 | 0.54 | 88 | 46 | cpu |
 | native-node-cpu/fp32 | gsm8k | 100 | 0.29 | 0.29 | 1.0 | [1.000, 1.000] | 0 | 0 | 1.0 | 1.0 |  | 0 | cpu |
+| native-node-cpu/q4 | gsm8k | 100 | 0.2 | 0.29 | 0.19 | [0.120, 0.270] | 13 | 4 | 0.049 | 0.0 | 0 | 100 | cpu |
+| native-node-cpu/q4f16 | gsm8k | 100 | 0.24 | 0.29 | 0.23 | [0.150, 0.320] | 10 | 5 | 0.3018 | 0.0 | 0 | 100 | cpu |
 | browser/tjs-wasm/q4/cpu-chrome-check | mmlu | 10 | 0.2 | 0.3 | 0.4 | [0.100, 0.700] | 1 | 0 | 1.0 | 0.3 | 0 | 7 | intel |
 | browser/tjs-webgpu/fp16/intel-chrome | mmlu | 200 | 0.055 | 0.39 | 0.205 | [0.155, 0.260] | 73 | 6 | 0.0 | 0.0 | 0 | 200 | intel |
 | browser/tjs-webgpu/fp16/nvidia-chrome | mmlu | 200 | 0.07 | 0.39 | 0.21 | [0.155, 0.270] | 72 | 8 | 0.0 | 0.005 | 0 | 199 | nvidia |
@@ -85,14 +86,17 @@ Hardware: Laptop with Intel Core i5-13420H, NVIDIA GeForce RTX 2050 (4 GB VRAM),
 | browser/webllm/q4f16_1/nvidia-chrome | mmlu | 200 | 0.43 | 0.39 | 0.5 | [0.430, 0.570] | 22 | 30 | 0.3317 | 0.345 | 0 | 131 | nvidia |
 | browser/webllm/q4f32_1/intel-chrome | mmlu | 200 | 0.445 | 0.39 | 0.55 | [0.480, 0.620] | 19 | 30 | 0.1524 | 0.37 | 0 | 126 | intel |
 | browser/webllm/q4f32_1/nvidia-chrome | mmlu | 200 | 0.445 | 0.39 | 0.55 | [0.480, 0.620] | 19 | 30 | 0.1524 | 0.37 | 0 | 126 | nvidia |
+| native-node-cpu/fp16 | mmlu | 200 | 0.38 | 0.39 | 0.98 | [0.960, 0.995] | 2 | 0 | 0.5 | 0.91 | 1 | 18 | cpu |
 | native-node-cpu/fp32 | mmlu | 200 | 0.39 | 0.39 | 1.0 | [1.000, 1.000] | 0 | 0 | 1.0 | 1.0 |  | 0 | cpu |
+| native-node-cpu/q4 | mmlu | 200 | 0.455 | 0.39 | 0.675 | [0.610, 0.735] | 11 | 24 | 0.041 | 0.485 | 0 | 103 | cpu |
+| native-node-cpu/q4f16 | mmlu | 200 | 0.465 | 0.39 | 0.68 | [0.615, 0.740] | 10 | 25 | 0.0167 | 0.475 | 0 | 105 | cpu |
 
-### Key Takeaways
+### Key Empirical Findings
 
-1. **`fp32` In-Browser Memory Ceiling:** Full unquantized `fp32` models cannot allocate within consumer browser WebGPU environments due to heap/buffer limits (`std::bad_alloc`, error code 6) on both 4 GB dGPU and shared-memory iGPU targets, establishing quantization as a mandatory prerequisite for browser deployment.
-2. **Hidden Answer Flips in WebLLM (24.5%–26.0% churn on MMLU):** While WebLLM aggregate accuracy matches or slightly exceeds the native reference (`0.42–0.445` vs. `0.39`), this parity masks widespread bilateral answer flips. Between 49 and 52 out of 200 questions flipped (19–23 correct-to-wrong, 29–30 wrong-to-correct), demonstrating that overall benchmark accuracy hides significant semantic churn.
-3. **`q4f32_1` Eliminates Intel vs. NVIDIA Cross-GPU Drift:** In `q4f16_1`, slight inter-vendor divergence emerged between Intel UHD and NVIDIA RTX 2050 on both MMLU (`0.42` vs. `0.43`) and GSM8K (`0.16` vs. `0.19`). Upgrading intermediate accumulation precision to `q4f32_1` completely eliminated this cross-GPU divergence, producing identical accuracy (`0.18` on GSM8K, `0.445` on MMLU) and identical flip profiles across vendors.
-4. **Transformers.js WebGPU vs. WASM Contrast:** While Transformers.js 4.3.0 WebGPU collapsed deterministically across both GPUs (`0.00–0.01` on GSM8K, diverging at token 0), running the exact same model weights and test harness through the browser WASM CPU backend (`tjs-wasm/q4`) scored `0.40` on GSM8K—matching native `fp32` CPU performance on the same subset. This confirms that the test harness and ONNX weights are intact, isolating the failure specifically to the browser WebGPU execution pipeline.
+1. **Transformers.js WebGPU Generation Collapse at Token 0:** Across both Intel UHD Graphics and NVIDIA GeForce RTX 2050, running Transformers.js 4.3.0 WebGPU (`fp16` and `q4f16`) resulted in near-total generation collapse (`0.00–0.01` accuracy on GSM8K, `0.02–0.07` on MMLU), diverging immediately at token `0`. A duplicate test run (`nvidia-chrome-repeat`) yielded identical scores, demonstrating that this degradation is fully deterministic rather than transient. Conversely, executing the exact same ONNX model graph via browser CPU WebAssembly (`tjs-wasm/q4`) scored `0.40` on GSM8K—matching native `fp32` CPU performance on that subset—isolating the collapse to the Transformers.js WebGPU execution/shader path.
+2. **Hidden Answer Flips in WebLLM (24.5%–26.0% MMLU Flips):** While WebLLM aggregate accuracy matches or slightly exceeds the native reference (`0.42–0.445` vs. `0.39`), this surface metric conceals massive bilateral answer flips: 49 to 52 out of 200 MMLU questions flipped (19–23 correct-to-wrong, 29–30 wrong-to-correct), underscoring that overall accuracy figures disguise high semantic churn.
+3. **32-Bit (`q4f32_1`) Accumulation Eliminates Cross-Vendor GPU Drift:** Under `q4f16_1`, subtle inter-vendor numerical divergence appeared between Intel UHD and NVIDIA RTX 2050 on both MMLU (`0.42` vs. `0.43`) and GSM8K (`0.16` vs. `0.19`). Upgrading intermediate accumulation precision to 32-bit (`q4f32_1`) completely eliminated cross-vendor divergence, achieving identical accuracy (`0.18` on GSM8K, `0.445` on MMLU) and identical flip profiles across Intel and NVIDIA GPUs.
+4. **Native Baseline and Precision Scaling:** Native CPU `fp16` maintains near-perfect fidelity with the `fp32` reference (98.0% agreement on MMLU, 0.91 exact text match), while 4-bit quantization natively induces answer divergence (67.5%–68.0% MMLU agreement). Full `fp32` cannot allocate within browser WebGPU environments due to heap/buffer limits (`std::bad_alloc`, error code 6), making quantized builds necessary for web deployments.
 
 ## Fixed settings
 

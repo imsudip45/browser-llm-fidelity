@@ -9,17 +9,39 @@ from scipy.stats import binomtest
 RD = sys.argv[1] if len(sys.argv) > 1 else "results"
 REF = sys.argv[2] if len(sys.argv) > 2 else "native-node-cpu/fp32"
 
+# Optional Qwen2.5 tokenizer fallback for runtimes (like WebLLM) that omit token IDs
+TOKENIZER = None
+try:
+    from transformers import AutoTokenizer
+    TOKENIZER = AutoTokenizer.from_pretrained("onnx-community/Qwen2.5-0.5B-Instruct")
+except Exception:
+    TOKENIZER = None
+
+
+def get_tokens(item):
+    """Return token ID list if present; otherwise tokenize text (or fallback to whitespace words)."""
+    ids = item.get("ids")
+    if ids is not None and len(ids) > 0:
+        return ids
+    text = item.get("text", "")
+    if TOKENIZER is not None:
+        return TOKENIZER.encode(text, add_special_tokens=False)
+    return text.split()
+
+
 def load():
     runs = {}
     for f in sorted(glob.glob(os.path.join(RD, "*.json"))):
         try:
-            d = json.load(open(f, encoding="utf-8"))
+            with open(f, encoding="utf-8") as fp:
+                d = json.load(fp)
         except Exception:
             continue
         if "meta" not in d:
             continue
         runs[d["meta"]["setup"]] = d
     return runs
+
 
 def first_div(a, b):
     n = min(len(a), len(b))
@@ -28,11 +50,13 @@ def first_div(a, b):
             return i
     return None if len(a) == len(b) else n
 
+
 def mcnemar(b, c):
     # exact two-sided McNemar on discordant pairs
     if b + c == 0:
         return 1.0
     return binomtest(b, b + c, 0.5).pvalue
+
 
 def boot_ci(xs, it=2000, seed=0):
     if not xs:
@@ -41,6 +65,7 @@ def boot_ci(xs, it=2000, seed=0):
     n = len(xs)
     ms = sorted(sum(rng.choice(xs) for _ in range(n)) / n for _ in range(it))
     return ms[int(0.025 * it)], ms[int(0.975 * it)]
+
 
 def main():
     runs = load()
@@ -63,11 +88,25 @@ def main():
             exact = sum(1 for i in ids if res[i]["text"] == ref[i]["text"]) / len(ids)
             divs = []
             for i in ids:
-                a, b = res[i].get("ids"), ref[i].get("ids")
-                if a is not None and b is not None:
-                    fd = first_div(a, b)
-                    if fd is not None:
-                        divs.append(fd)
+                if res[i]["text"] == ref[i]["text"]:
+                    continue
+                # If both have raw token IDs, compare raw IDs; otherwise compare re-tokenized text
+                a_raw, b_raw = res[i].get("ids"), ref[i].get("ids")
+                if a_raw is not None and b_raw is not None and len(a_raw) > 0 and len(b_raw) > 0:
+                    fd = first_div(a_raw, b_raw)
+                else:
+                    if TOKENIZER is not None:
+                        a_tok = TOKENIZER.encode(res[i].get("text", ""), add_special_tokens=False)
+                        b_tok = TOKENIZER.encode(ref[i].get("text", ""), add_special_tokens=False)
+                    else:
+                        a_tok = res[i].get("text", "").split()
+                        b_tok = ref[i].get("text", "").split()
+                    fd = first_div(a_tok, b_tok)
+                if fd is not None:
+                    divs.append(fd)
+                else:
+                    # Texts differ only in trailing whitespace
+                    divs.append(0)
             lo, hi = boot_ci(agree)
             rows.append(dict(
                 setup=setup, task=task, n=len(ids), acc=round(acc, 3), ref_acc=round(racc, 3),
@@ -81,7 +120,8 @@ def main():
     rows.sort(key=lambda r: (r["task"], r["setup"]))
     with open(os.path.join(RD, "summary.csv"), "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
-        w.writeheader(); w.writerows(rows)
+        w.writeheader()
+        w.writerows(rows)
     cols = ["setup", "task", "n", "acc", "ref_acc", "agree", "agree_ci", "flips_c2w", "flips_w2c", "mcnemar_p", "exact_text", "median_first_div_token", "n_diverged", "gpu"]
     lines = [
         f"Reference: {REF}",
@@ -92,8 +132,10 @@ def main():
     ]
     for r in rows:
         lines.append("| " + " | ".join(str(r[c]) for c in cols) + " |")
-    open(os.path.join(RD, "summary.md"), "w", encoding="utf-8").write("\n".join(lines) + "\n")
+    with open(os.path.join(RD, "summary.md"), "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
     print("\n".join(lines))
+
 
 if __name__ == "__main__":
     main()

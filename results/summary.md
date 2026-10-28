@@ -9,10 +9,10 @@ Hardware: Laptop with Intel Core i5-13th Gen H processor (i5-13420H), NVIDIA GeF
 | browser/tjs-webgpu/fp16/nvidia-chrome-repeat | gsm8k | 100 | 0.01 | 0.29 | 0.02 | [0.000, 0.050] | 29 | 1 | 0.0 | 0.0 | 0 | 100 | nvidia |
 | browser/tjs-webgpu/q4f16/intel-chrome | gsm8k | 100 | 0.0 | 0.29 | 0.0 | [0.000, 0.000] | 29 | 0 | 0.0 | 0.0 | 0 | 100 | intel |
 | browser/tjs-webgpu/q4f16/nvidia-chrome | gsm8k | 100 | 0.0 | 0.29 | 0.0 | [0.000, 0.000] | 29 | 0 | 0.0 | 0.0 | 0 | 100 | nvidia |
-| browser/webllm/q4f16_1/intel-chrome | gsm8k | 100 | 0.16 | 0.29 | 0.15 | [0.080, 0.220] | 19 | 6 | 0.0146 | 0.0 |  | 0 | intel |
-| browser/webllm/q4f16_1/nvidia-chrome | gsm8k | 100 | 0.19 | 0.29 | 0.19 | [0.120, 0.270] | 16 | 6 | 0.0525 | 0.0 |  | 0 | nvidia |
-| browser/webllm/q4f32_1/intel-chrome | gsm8k | 100 | 0.18 | 0.29 | 0.2 | [0.120, 0.290] | 16 | 5 | 0.0266 | 0.0 |  | 0 | intel |
-| browser/webllm/q4f32_1/nvidia-chrome | gsm8k | 100 | 0.18 | 0.29 | 0.2 | [0.120, 0.290] | 16 | 5 | 0.0266 | 0.0 |  | 0 | nvidia |
+| browser/webllm/q4f16_1/intel-chrome | gsm8k | 100 | 0.16 | 0.29 | 0.15 | [0.080, 0.220] | 19 | 6 | 0.0146 | 0.0 | 1 | 100 | intel |
+| browser/webllm/q4f16_1/nvidia-chrome | gsm8k | 100 | 0.19 | 0.29 | 0.19 | [0.120, 0.270] | 16 | 6 | 0.0525 | 0.0 | 1 | 100 | nvidia |
+| browser/webllm/q4f32_1/intel-chrome | gsm8k | 100 | 0.18 | 0.29 | 0.2 | [0.120, 0.290] | 16 | 5 | 0.0266 | 0.0 | 1 | 100 | intel |
+| browser/webllm/q4f32_1/nvidia-chrome | gsm8k | 100 | 0.18 | 0.29 | 0.2 | [0.120, 0.290] | 16 | 5 | 0.0266 | 0.0 | 1 | 100 | nvidia |
 | native-node-cpu/fp16 | gsm8k | 100 | 0.31 | 0.29 | 0.74 | [0.650, 0.820] | 2 | 4 | 0.6875 | 0.54 | 88 | 46 | cpu |
 | native-node-cpu/fp32 | gsm8k | 100 | 0.29 | 0.29 | 1.0 | [1.000, 1.000] | 0 | 0 | 1.0 | 1.0 |  | 0 | cpu |
 | native-node-cpu/q4 | gsm8k | 100 | 0.2 | 0.29 | 0.19 | [0.120, 0.270] | 13 | 4 | 0.049 | 0.0 | 0 | 100 | cpu |
@@ -23,10 +23,10 @@ Hardware: Laptop with Intel Core i5-13th Gen H processor (i5-13420H), NVIDIA GeF
 | browser/tjs-webgpu/fp16/nvidia-chrome-repeat | mmlu | 200 | 0.07 | 0.39 | 0.21 | [0.155, 0.270] | 72 | 8 | 0.0 | 0.005 | 0 | 199 | nvidia |
 | browser/tjs-webgpu/q4f16/intel-chrome | mmlu | 200 | 0.025 | 0.39 | 0.2 | [0.150, 0.260] | 77 | 4 | 0.0 | 0.01 | 0 | 198 | intel |
 | browser/tjs-webgpu/q4f16/nvidia-chrome | mmlu | 200 | 0.02 | 0.39 | 0.19 | [0.140, 0.250] | 78 | 4 | 0.0 | 0.0 | 0 | 200 | nvidia |
-| browser/webllm/q4f16_1/intel-chrome | mmlu | 200 | 0.42 | 0.39 | 0.5 | [0.430, 0.570] | 23 | 29 | 0.4885 | 0.35 |  | 0 | intel |
-| browser/webllm/q4f16_1/nvidia-chrome | mmlu | 200 | 0.43 | 0.39 | 0.5 | [0.430, 0.570] | 22 | 30 | 0.3317 | 0.345 |  | 0 | nvidia |
-| browser/webllm/q4f32_1/intel-chrome | mmlu | 200 | 0.445 | 0.39 | 0.55 | [0.480, 0.620] | 19 | 30 | 0.1524 | 0.37 |  | 0 | intel |
-| browser/webllm/q4f32_1/nvidia-chrome | mmlu | 200 | 0.445 | 0.39 | 0.55 | [0.480, 0.620] | 19 | 30 | 0.1524 | 0.37 |  | 0 | nvidia |
+| browser/webllm/q4f16_1/intel-chrome | mmlu | 200 | 0.42 | 0.39 | 0.5 | [0.430, 0.570] | 23 | 29 | 0.4885 | 0.35 | 0 | 130 | intel |
+| browser/webllm/q4f16_1/nvidia-chrome | mmlu | 200 | 0.43 | 0.39 | 0.5 | [0.430, 0.570] | 22 | 30 | 0.3317 | 0.345 | 0 | 131 | nvidia |
+| browser/webllm/q4f32_1/intel-chrome | mmlu | 200 | 0.445 | 0.39 | 0.55 | [0.480, 0.620] | 19 | 30 | 0.1524 | 0.37 | 0 | 126 | intel |
+| browser/webllm/q4f32_1/nvidia-chrome | mmlu | 200 | 0.445 | 0.39 | 0.55 | [0.480, 0.620] | 19 | 30 | 0.1524 | 0.37 | 0 | 126 | nvidia |
 | native-node-cpu/fp16 | mmlu | 200 | 0.38 | 0.39 | 0.98 | [0.960, 0.995] | 2 | 0 | 0.5 | 0.91 | 1 | 18 | cpu |
 | native-node-cpu/fp32 | mmlu | 200 | 0.39 | 0.39 | 1.0 | [1.000, 1.000] | 0 | 0 | 1.0 | 1.0 |  | 0 | cpu |
 | native-node-cpu/q4 | mmlu | 200 | 0.455 | 0.39 | 0.675 | [0.610, 0.735] | 11 | 24 | 0.041 | 0.485 | 0 | 103 | cpu |

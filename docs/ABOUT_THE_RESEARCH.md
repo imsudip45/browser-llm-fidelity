@@ -92,9 +92,9 @@ The most common mistake in comparisons like this is to change several things at 
 ### 5.2 Fixed and shared components
 
 - One shared file (`site/harness.js`) builds every prompt and extracts every answer. The native runner and the browser runner both import it, so prompts and scoring are identical.
-- The same Transformers.js version (4.3.0) is used natively and in the browser.
-- An explicit system prompt is included so that every runtime receives the same conversation.
-- All runs use greedy decoding and fixed maximum output lengths.
+- The exact system prompt across all setups is: `"You are Qwen, created by Alibaba Cloud. You are a helpful assistant."`
+- The same Transformers.js version (4.3.0) is used natively and in the browser; WebLLM runs on version 0.2.85.
+- All runs use greedy decoding (temperature = 0, no sampling) and fixed maximum output lengths (5 new tokens for MMLU, 320 new tokens for GSM8K).
 - Each results file records the exact setup: library versions, model, precision, browser user agent, and the GPU reported by WebGPU.
 
 ### 5.3 Model
@@ -103,14 +103,16 @@ Qwen2.5-0.5B-Instruct, using the ONNX files published at https://huggingface.co/
 
 We chose a 0.5B model because it fits comfortably on a 4 GB GPU, and because small models are what people actually run in browsers. A second model (for example a 1–1.5B model) may be added if time allows.
 
-### 5.4 Questions
+### 5.4 Questions and Evaluation Inventory
 
 | Benchmark | Number | Why |
 |---|---|---|
-| MMLU ([dataset](https://huggingface.co/datasets/cais/mmlu)) | 200 questions, about 4 per subject across all 57 subjects | Multiple choice; the answer is a single letter, so it tests short outputs |
+| MMLU ([dataset](https://huggingface.co/datasets/cais/mmlu)) | 200 questions across all 57 subjects (capped at 4 per subject: 34 subjects with 4 items, 18 with 3 items, 5 with 2 items) | Multiple choice; the answer is a single letter, so it tests short outputs |
 | GSM8K ([dataset](https://huggingface.co/datasets/openai/gsm8k)) | 100 problems | Grade-school maths with step-by-step reasoning; long outputs, where small differences can grow |
 
 The questions were sampled once with a fixed random seed (2026) and saved in `site/questions_v1.json`. `scripts/make_questions.py` rebuilds them exactly.
+
+In total, across 13 full runs ($N=300$) and one 20-item diagnostic WebAssembly check ($N=20$), the benchmark suite evaluates **14 run result files, 28 task evaluations, and 3,920 individual item evaluations**.
 
 ### 5.5 Hardware
 
@@ -131,16 +133,22 @@ Having NVIDIA and Intel GPUs in the same laptop is useful: the CPU, memory, oper
 
 For every setup and task:
 
-1. Accuracy: the share of questions answered correctly.
-2. Agreement with the reference: the share of questions where the setup gives the same final answer as the full-precision native reference (right or wrong).
-3. Flips: correct-to-wrong and wrong-to-correct counts compared with the reference.
-4. Exact output match: the share of answers whose full text is character-for-character identical to the reference.
-5. First divergence position: when outputs differ, the token position where they first differ. Early divergence means the difference starts at the beginning of the answer; late divergence means it accumulates.
-6. Repeatability: whether the same setup gives identical outputs when run twice.
+1. **Accuracy (`acc`):** the share of all $n$ questions answered correctly under standard parsing.
+2. **Valid agreement (`valid_agree`):** the share of questions where *both* the test setup and the reference produced non-null parsed predictions (`pred_ref is not None and pred_test is not None`) and their final answers match. This isolates genuine answer concordance from unparsed failures.
+3. **All-outcome agreement (`all_outcome_agree`):** the share of all $n$ questions where predictions match, including shared unparsed outcomes (`None == None`).
+4. **Flips decomposition:** 
+   - `flips_c2w`: reference correct, test wrong.
+   - `flips_w2c`: reference wrong, test correct.
+   - `unparsed_ref_to_correct`: reference unparsed/null, test correct (a subset of `w2c`).
+   - `correct_to_unparsed_test`: reference correct, test unparsed/null.
+5. **Exact output match (`exact_text`):** the share of answers whose full generated text is character-for-character identical to the reference under literal string comparison without whitespace trimming.
+6. **Token divergence distribution:** for diverged responses, the token position where text first differs, evaluated via Hugging Face tokenization. We report the interpolated median (`median_first_div_token` via `statistics.median`), as well as counts of immediate divergence at token 0 (`n_div_at_0`) and token 1 (`n_div_at_1`).
+7. **Parsing and truncation audit:** we measure standard parse rate (`parse_rate`), unparsed count (`n_unparsed`), accuracy among valid responses (`acc_parsed`), strict accuracy (`strict_acc` requiring exact regex patterns like `answer is <num>`), and truncation count (`n_truncated_or_max` hitting generation caps).
+8. **Repeatability:** whether the same setup gives identical outputs when run twice on the same hardware (`nvidia-chrome` vs `nvidia-chrome-repeat`).
 
 Statistics:
 
-- McNemar's exact test checks whether accuracy differences between two setups on the same questions are larger than chance.
+- McNemar's exact test checks whether accuracy differences between two setups on the same questions are larger than chance (formatted as `< 1e-4` when $p < 0.0001$).
 - Bootstrap 95% confidence intervals are reported for agreement rates.
 
 The flip idea comes from work on model compression showing that even when compressed models keep similar accuracy, individual answers change in both directions ([Accuracy is Not All You Need](https://openreview.net/pdf/7ecf82af167db2fa1a4c2972d42f903ce9507ee9.pdf)). Recent work also links internal output differences to such decision flips ([How Divergence Becomes Decision Flips in Compressed Language Models](https://arxiv.org/html/2610.00694v1)). We apply this lens to browser deployment, which, as far as we found, these works do not study.
@@ -162,17 +170,18 @@ This related-work check was done on 3 October 2026 and will be repeated before p
 
 ## 8. What we will not claim
 
-- We will not claim that results hold for all models, all browsers, or all GPUs. We test one small model (possibly two), Chromium-based browsers, and two GPU targets on our testbed (NVIDIA discrete and Intel integrated).
-- We will not claim that one framework is "better". Frameworks use different model builds; we report differences, not rankings.
-- We will not claim causes we did not test directly. If browser and native differ, we can say where and how much, and suggest likely reasons (for example precision of arithmetic), but not prove the exact low-level cause without kernel-level experiments.
-- Benchmark accuracy for a 0.5B model is low in absolute terms. That is expected and not the point; the point is whether answers stay the same.
+- We will not claim that results hold for all models, all browsers, or all GPUs. We test one small model (`Qwen2.5-0.5B-Instruct`), Chromium-based browsers, and two GPU targets on our testbed (NVIDIA GeForce RTX 2050 discrete and Intel UHD Graphics integrated).
+- We will not claim that Transformers.js WebGPU degradation represents a general flaw in the WebGPU standard. The collapse observed in Transformers.js v4.3.0 WebGPU (`fp16`/`q4f16`) is a failure mode of that specific runtime and shader compilation pipeline on the host environment; the independent WebLLM runtime operates over WebGPU on the exact same hardware without collapse.
+- We will not claim that differences between native CPU Transformers.js and browser WebLLM are purely runtime effects. WebLLM uses its own pre-compiled TVM model builds, proprietary quantization kernels, and execution engine; these comparisons evaluate end-to-end deployment stacks (RQ3) rather than isolated runtime differences alone.
+- We will not claim causes we did not test directly. If browser and native differ, we report the exact token divergence points and behavioral differences, and suggest likely numerical or allocation causes, but do not prove low-level driver or kernel mechanics without kernel-level profiling.
+- Benchmark accuracy for a 0.5B model is modest in absolute terms. That is expected; the focus is measuring answer fidelity across execution environments.
 
 ## 9. Known limitations
 
-- Small sample: 300 questions per setup. Enough to detect clear differences, not tiny ones.
-- Answer extraction: in some MMLU questions the small model writes text instead of a letter. This affects all setups equally because scoring code is shared, but it is reported.
-- WebLLM uses its own model builds and chat handling, so WebLLM comparisons answer RQ3 (deployment effect), not RQ1.
-- Browser and driver versions change often; we record versions in every results file.
+- Fixed question sample: 300 questions per setup (200 MMLU, 100 GSM8K), totaling 3,920 item evaluations across 14 logs. While sufficient to detect statistically significant discrepancies and immediate token divergences, larger samples would provide finer confidence intervals.
+- Answer extraction sensitivity: Qwen2.5-0.5B sometimes outputs reasoning text without isolating a single letter (MMLU) or hits the 320-token limit without emitting `"The answer is N."` (GSM8K). We report parse rates and strict extraction metrics explicitly to quantify this limitation.
+- Memory constraints: Running unquantized `fp32` models under Transformers.js WebGPU fails on consumer laptops with 4 GB VRAM and 8 GB RAM (`std::bad_alloc`), requiring compressed formats for browser deployment.
+- Software drift: Browser, driver, and WebGPU implementation versions evolve rapidly; exact software versions are preserved in every JSON artifact.
 
 ## 10. Ethics and data
 

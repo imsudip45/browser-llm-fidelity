@@ -4,6 +4,7 @@ Title: "Does Running a Small LLM in the Browser Change Its Answers? Comparing Na
 
 Authors: Sudip Niroula (lead author), Mandip Pokharel (co-author)
 Status: Completed (October 2026)
+Archived DOI: https://doi.org/10.5281/zenodo.23760946
 Planned output: preprint on TechRxiv, with code and data in this repository (and an archived copy on Zenodo)
 
 This document explains, in plain language, what the study is about, why it matters, how it is designed, and what we will and will not claim. It is written so that a co-author, a reviewer, or an admissions committee can understand the project without reading the code.

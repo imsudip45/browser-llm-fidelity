@@ -1,5 +1,7 @@
 # Does Running a Small LLM in the Browser Change Its Answers? Comparing Native and WebGPU Inference Across GPUs
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23760946.svg)](https://doi.org/10.5281/zenodo.23760946)
+
 **Authors:** Sudip Niroula (Lead / First Author) and Mandip Pokharel (Co-Author)  
 **Status:** Completed benchmark dataset and reproducible test harness (October 2026)  
 **Model Tested:** `Qwen2.5-0.5B-Instruct`  
@@ -131,6 +133,25 @@ python analyze.py results native-node-cpu/fp32
 
 - **Sudip Niroula** (Lead / First Author): Conceptualization, Methodology, Software (experiment harness and analysis pipeline), Formal Analysis, Writing – Original Draft, Documentation.
 - **Mandip Pokharel** (Co-Author): Investigation (native and dual-GPU browser benchmark execution on the Intel Core i5-13420H / NVIDIA RTX 2050 / Intel UHD testbed), Data Curation, Validation.
+
+## Citation
+
+If you use this benchmark dataset or evaluation harness in your research, please cite:
+
+> Niroula, S., & Pokharel, M. (2026). *Does Running a Small LLM in the Browser Change Its Answers? Comparing Native and WebGPU Inference Across GPUs*. Zenodo. https://doi.org/10.5281/zenodo.23760946
+
+```bibtex
+@software{niroula2026browserllmfidelity,
+  author       = {Niroula, Sudip and Pokharel, Mandip},
+  title        = {{Does Running a Small LLM in the Browser Change Its Answers? Comparing Native and WebGPU Inference Across GPUs}},
+  month        = oct,
+  year         = 2026,
+  publisher    = {Zenodo},
+  version      = {v1.0.0},
+  doi          = {10.5281/zenodo.23760946},
+  url          = {https://doi.org/10.5281/zenodo.23760946}
+}
+```
 
 ## License
 

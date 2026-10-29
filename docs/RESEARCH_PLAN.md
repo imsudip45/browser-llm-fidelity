@@ -2,7 +2,7 @@
 
 # Research Plan: Does Running a Small LLM in the Browser Change Its Answers?
 
-Working title: "Same Model, Different Answers? Measuring Answer Fidelity of In-Browser LLM Inference Across Frameworks and GPU Vendors"
+Title: "Does Running a Small LLM in the Browser Change Its Answers? Comparing Native and WebGPU Inference Across GPUs"
 
 Authors: Sudip Niroula (first author) and Mandip Pokharel (second author)
 Prepared: 3 October 2026

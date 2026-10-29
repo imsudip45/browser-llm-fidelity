@@ -1,9 +1,9 @@
 # About This Research
 
-Working title: "Same Model, Different Answers? Measuring Answer Fidelity of In-Browser LLM Inference Across Frameworks and GPU Vendors"
+Title: "Does Running a Small LLM in the Browser Change Its Answers? Comparing Native and WebGPU Inference Across GPUs"
 
 Authors: Sudip Niroula (lead author), Mandip Pokharel (co-author)
-Status: in progress (October 2026)
+Status: Completed (October 2026)
 Planned output: preprint on TechRxiv, with code and data in this repository (and an archived copy on Zenodo)
 
 This document explains, in plain language, what the study is about, why it matters, how it is designed, and what we will and will not claim. It is written so that a co-author, a reviewer, or an admissions committee can understand the project without reading the code.

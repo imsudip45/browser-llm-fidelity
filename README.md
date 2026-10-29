@@ -1,64 +1,41 @@
-# Browser LLM Fidelity
+# Does Running a Small LLM in the Browser Change Its Answers? Comparing Native and WebGPU Inference Across GPUs
 
-Does running a small language model inside a web browser change its answers?
+**Authors:** Sudip Niroula (Lead / First Author) and Mandip Pokharel (Co-Author)  
+**Status:** Completed benchmark dataset and reproducible test harness (October 2026)  
+**Model Tested:** `Qwen2.5-0.5B-Instruct`  
+**Setups Compared:** Native Node.js on CPU (`fp32`, `fp16`, `q4`, `q4f16`) vs. Web Browser (`Transformers.js v4.3.0` WASM & WebGPU, and `WebLLM v0.2.85` WebGPU)  
+**Test Hardware:** Single Windows 11 Laptop (13th Gen Intel Core i5-13420H CPU, NVIDIA GeForce RTX 2050 4 GB discrete GPU, and Intel UHD Gen-12LP integrated GPU, 8 GB RAM)  
 
-This repository contains the full experiment harness for a short empirical study comparing the answers of the same small LLM (Qwen2.5-0.5B-Instruct) when run:
+---
 
-- natively (Transformers.js on Node.js with onnxruntime-node, CPU), and
-- in the browser (Transformers.js with WebGPU or WASM, and WebLLM with WebGPU),
-- across GPU vendors on a single unified host machine (NVIDIA GeForce RTX 2050 4 GB discrete GPU vs. Intel UHD Gen-12LP integrated GPU).
+## Summary
 
-## Research questions
+Most studies on browser AI only measure how fast a model runs. Developers usually assume that loading the same model in a web browser gives the same answers as running it normally on a computer. To test this assumption, we asked `Qwen2.5-0.5B-Instruct` the exact same 300 questions (200 MMLU multiple-choice questions and 100 GSM8K math problems) with randomness turned off (greedy decoding). Using one shared prompt and scoring script (`site/harness.js`) across 28 setups on the same laptop, we compared native CPU runs against browser runs across two GPUs (NVIDIA RTX 2050 and Intel UHD).
 
-1. With the same weight file, does running in the browser change answers compared with native inference?
-2. Does the same browser setup give different answers on NVIDIA discrete versus Intel integrated GPUs?
-3. How far are ready-made browser builds (for example WebLLM q4f16_1) from a full-precision reference?
-4. Do overall accuracy numbers hide answer flips?
+## What We Found
 
-For a detailed plain-language explanation of the study, read [docs/ABOUT_THE_RESEARCH.md](docs/ABOUT_THE_RESEARCH.md). The working plan and related-work check are in [docs/RESEARCH_PLAN.md](docs/RESEARCH_PLAN.md).
+1. **Same weight file, broken browser WebGPU answers (Transformers.js):** When we run the `fp16` and `q4f16` ONNX model files natively on the CPU, they work normally (`fp16` matches the full-precision `fp32` baseline on 98% of MMLU questions and scores 31% on GSM8K math). However, loading those exact same `fp16` and `q4f16` files into Transformers.js WebGPU in Chrome causes the model's math answers to collapse to 0%–1% accuracy, changing outputs from the very first token (`token 0`). Running a 20-question check in browser CPU WASM (`q4`) restores normal GSM8K accuracy (40% vs. 40% reference), proving the bug is inside the WebGPU execution path rather than the weights or prompt script.
+2. **Overall accuracy hides changed answers ("answer flips"):** On MMLU multiple-choice questions, 4-bit models look just as accurate overall as the full-precision `fp32` reference (scoring 42.0%–46.5% vs. 39.0%). However, checking individual questions shows that native 4-bit compression alone flips 17.5% of the answers (from right to wrong or wrong to right, agreeing with `fp32` on 68% of questions), and running in the browser with WebLLM flips 24.5%–26.0% of the answers (agreeing with `fp32` on only 50%–55% of questions).
+3. **32-bit math fixes differences between Intel and NVIDIA GPUs:** In WebLLM, using 16-bit math (`q4f16_1`) causes the Intel integrated GPU and NVIDIA discrete GPU to give different answers on the same questions (16% vs. 19% on GSM8K). Switching to 32-bit math (`q4f32_1`) makes the Intel and NVIDIA GPUs give 100% identical accuracy (18.0% on GSM8K, 44.5% on MMLU) and identical answer flip counts.
+4. **Full-precision (`fp32`) does not fit in browser WebGPU memory:** Running even a tiny 0.5B model in full 32-bit precision inside browser WebGPU crashes with an out-of-memory error (`std::bad_alloc`) on a 4 GB NVIDIA GPU and 8 GB system RAM, showing why browser apps are forced to use 16-bit or 4-bit compression.
 
-## Repository layout
+---
 
-| Path | What it is |
-|---|---|
-| `site/` | Browser runner page (`index.html`, `app.js`, `worker.js`) |
-| `site/harness.js` | Shared prompts and answer extraction, used by both native and browser runs |
-| `site/questions_v1.json` | Fixed question set: 200 MMLU + 100 GSM8K, seed 2026 |
-| `run_native.mjs` | Native runner (Node.js, CPU) |
-| `runall.sh` | Runs the native reference (fp32) and native q4 / fp16 |
-| `analyze.py` | Compares all result files with the reference; writes `results/summary.md` and `.csv` |
-| `scripts/make_questions.py` | Rebuilds the question set from the original datasets |
-| `results/` | Result JSON files (one per setup) |
-| `RUN_GUIDE.md` | Step-by-step guide for running the browser experiments |
+## Research Questions
 
-## Quick start
+1. **RQ1 (Runtime effect):** With the exact same weight file, does running in the browser change answers compared with native inference?
+2. **RQ2 (GPU vendor effect):** Does the same browser setup give different answers on an NVIDIA discrete GPU versus an Intel integrated GPU within the same machine?
+3. **RQ3 (Deployment effect):** How far are ready-made browser builds (such as WebLLM `q4f16_1` and `q4f32_1`) from a full-precision native reference, and how much of that gap comes from compression versus the browser?
+4. **RQ4 (Hidden answer flips):** Do overall accuracy numbers hide individual questions flipping between right and wrong?
 
-Native reference:
+For a detailed plain-language guide to the study design, read [docs/ABOUT_THE_RESEARCH.md](docs/ABOUT_THE_RESEARCH.md). The initial literature check and planning notes are in [docs/RESEARCH_PLAN.md](docs/RESEARCH_PLAN.md), and hardware/diagnostic logs are in [results/hardware.md](results/hardware.md) and [results/notes.md](results/notes.md).
 
-```
-npm install
-node run_native.mjs onnx-community/Qwen2.5-0.5B-Instruct fp32 all
-```
+---
 
-Browser runs:
-
-```
-python -m http.server 8000 --directory site
-```
-
-Open http://localhost:8000 in Chrome and follow [RUN_GUIDE.md](RUN_GUIDE.md).
-
-Analysis:
-
-```
-pip install scipy transformers
-python analyze.py results native-node-cpu/fp32
-```
-
-## Benchmark Results Summary
+## Full Benchmark Results (28 Setups)
 
 Reference: `native-node-cpu/fp32`  
-Hardware: Laptop with Intel Core i5-13420H, NVIDIA GeForce RTX 2050 (4 GB VRAM), and Intel UHD Graphics (Windows 11, Chrome 139)
+Hardware: Single Windows 11 Laptop — Intel Core i5-13420H, NVIDIA GeForce RTX 2050 (4 GB VRAM), and Intel UHD Graphics (8 GB System RAM)
 
 | setup | task | n | acc | ref_acc | agree | agree_ci | flips_c2w | flips_w2c | mcnemar_p | exact_text | median_first_div_token | n_diverged | gpu |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -91,27 +68,66 @@ Hardware: Laptop with Intel Core i5-13420H, NVIDIA GeForce RTX 2050 (4 GB VRAM),
 | native-node-cpu/q4 | mmlu | 200 | 0.455 | 0.39 | 0.675 | [0.610, 0.735] | 11 | 24 | 0.041 | 0.485 | 0 | 103 | cpu |
 | native-node-cpu/q4f16 | mmlu | 200 | 0.465 | 0.39 | 0.68 | [0.615, 0.740] | 10 | 25 | 0.0167 | 0.475 | 0 | 105 | cpu |
 
-### Key Empirical Findings
+---
 
-1. **Transformers.js WebGPU Generation Collapse at Token 0:** Across both Intel UHD Graphics and NVIDIA GeForce RTX 2050, running Transformers.js 4.3.0 WebGPU (`fp16` and `q4f16`) resulted in near-total generation collapse (`0.00–0.01` accuracy on GSM8K, `0.02–0.07` on MMLU), diverging immediately at token `0`. A duplicate test run (`nvidia-chrome-repeat`) yielded identical scores, demonstrating that this degradation is fully deterministic rather than transient. Conversely, executing the exact same ONNX model graph via browser CPU WebAssembly (`tjs-wasm/q4`) scored `0.40` on GSM8K—matching native `fp32` CPU performance on that subset—isolating the collapse to the Transformers.js WebGPU execution/shader path.
-2. **Hidden Answer Flips in WebLLM (24.5%–26.0% MMLU Flips):** While WebLLM aggregate accuracy matches or slightly exceeds the native reference (`0.42–0.445` vs. `0.39`), this surface metric conceals massive bilateral answer flips: 49 to 52 out of 200 MMLU questions flipped (19–23 correct-to-wrong, 29–30 wrong-to-correct), underscoring that overall accuracy figures disguise high semantic churn.
-3. **32-Bit (`q4f32_1`) Accumulation Eliminates Cross-Vendor GPU Drift:** Under `q4f16_1`, subtle inter-vendor numerical divergence appeared between Intel UHD and NVIDIA RTX 2050 on both MMLU (`0.42` vs. `0.43`) and GSM8K (`0.16` vs. `0.19`). Upgrading intermediate accumulation precision to 32-bit (`q4f32_1`) completely eliminated cross-vendor divergence, achieving identical accuracy (`0.18` on GSM8K, `0.445` on MMLU) and identical flip profiles across Intel and NVIDIA GPUs.
-4. **Native Baseline and Precision Scaling:** Native CPU `fp16` maintains near-perfect fidelity with the `fp32` reference (98.0% agreement on MMLU, 0.91 exact text match), while 4-bit quantization natively induces answer divergence (67.5%–68.0% MMLU agreement). Full `fp32` cannot allocate within browser WebGPU environments due to heap/buffer limits (`std::bad_alloc`, error code 6), making quantized builds necessary for web deployments.
+## Repository Layout
 
-## Fixed settings
+| Path | What it is |
+|---|---|
+| `site/` | Browser runner page (`index.html`, `app.js`, `worker.js`) |
+| `site/harness.js` | Shared prompts and answer extraction used by both native and browser runs |
+| `site/questions_v1.json` | Fixed question set: 200 MMLU + 100 GSM8K, seed 2026 (also mirrored in `data/questions_v1.json`) |
+| `run_native.mjs` | Native runner (Node.js, CPU via `onnxruntime-node`) |
+| `runall.sh` | Runs all four native CPU baselines (`fp32`, `fp16`, `q4`, `q4f16`) |
+| `analyze.py` | Compares all result files against the reference; writes `results/summary.md` and `results/summary.csv` |
+| `scripts/make_questions.py` | Rebuilds the fixed 300-question set from the original Hugging Face datasets |
+| `results/` | Raw JSON result logs (14 files), `hardware.md`, `notes.md`, `summary.md`, and `summary.csv` |
+| `RUN_GUIDE.md` | Step-by-step instructions for reproducing the browser and native experiments |
+| `CITATION.cff` | Citation metadata for Zenodo and academic references |
 
-- Greedy decoding (no sampling), identical system prompt and chat template.
-- MMLU: answer with a single letter, max 5 new tokens.
-- GSM8K: step-by-step, final "The answer is N.", max 320 new tokens.
-- Transformers.js 4.3.0 (native and browser), WebLLM 0.2.85.
+---
 
-## Data sources
+## Quick Start (How to Reproduce)
 
-- MMLU: https://huggingface.co/datasets/cais/mmlu
-- GSM8K: https://huggingface.co/datasets/openai/gsm8k
-- Model (ONNX): https://huggingface.co/onnx-community/Qwen2.5-0.5B-Instruct
+### 1. Native CPU Baselines
 
-## Authors
+```bash
+npm install
+node run_native.mjs onnx-community/Qwen2.5-0.5B-Instruct fp32 all
+node run_native.mjs onnx-community/Qwen2.5-0.5B-Instruct fp16 all
+node run_native.mjs onnx-community/Qwen2.5-0.5B-Instruct q4 all
+node run_native.mjs onnx-community/Qwen2.5-0.5B-Instruct q4f16 all
+```
+
+### 2. Browser Runs
+
+```bash
+python -m http.server 8000 --directory site
+```
+
+Open http://localhost:8000 in Google Chrome and follow [RUN_GUIDE.md](RUN_GUIDE.md).
+
+### 3. Statistical Analysis & Summary Generation
+
+```bash
+pip install -r requirements.txt
+python analyze.py results native-node-cpu/fp32
+```
+
+## Fixed Experimental Settings
+
+- **Decoding:** Greedy decoding (temperature = 0, no sampling), identical system prompt and chat template across all setups.
+- **MMLU (200 questions):** Stratified across all 57 subjects; answer with a single letter (A–D), max 5 new tokens.
+- **GSM8K (100 problems):** Step-by-step math reasoning ending with "The answer is N.", max 320 new tokens.
+- **Library Versions:** Transformers.js 4.3.0 (both native Node.js and browser), WebLLM 0.2.85, Chrome 139.0.0.0.
+
+## Data & Model Sources
+
+- **MMLU:** https://huggingface.co/datasets/cais/mmlu
+- **GSM8K:** https://huggingface.co/datasets/openai/gsm8k
+- **ONNX Weights:** https://huggingface.co/onnx-community/Qwen2.5-0.5B-Instruct
+
+## Authors & Contributions (CRediT)
 
 - **Sudip Niroula** (Lead / First Author): Conceptualization, Methodology, Software (experiment harness and analysis pipeline), Formal Analysis, Writing – Original Draft, Documentation.
 - **Mandip Pokharel** (Co-Author): Investigation (native and dual-GPU browser benchmark execution on the Intel Core i5-13420H / NVIDIA RTX 2050 / Intel UHD testbed), Data Curation, Validation.

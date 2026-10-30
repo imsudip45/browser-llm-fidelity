@@ -19,11 +19,7 @@ We take the same small AI language model, ask it the same 300 questions in exact
 
 ### 2.1 AI is moving into the browser
 
-Small language models (around 0.5 to 3 billion parameters) can now run directly inside a web page, using the computer's own graphics card through a browser technology called WebGPU. Libraries such as WebLLM and Transformers.js make this practical. The appeal is clear:
-
-- Privacy: the user's text never leaves their device.
-- Cost: no server and no paid API.
-- Offline use: it works without internet once the model is downloaded.
+Small language models (around 0.5 to 3 billion parameters) can now run directly inside a web page, using the computer's own graphics card through a browser technology called WebGPU. Libraries such as WebLLM and Transformers.js make this practical. Client-side inference can avoid per-request inference-server computation and can keep prompts local when the application does not transmit them. Once weights are cached locally, it can also operate offline.
 
 The WebLLM authors report that in-browser inference can retain up to about 80% of native decoding speed on the same device ([WebLLM paper](https://arxiv.org/html/2412.15803v2)).
 
@@ -64,13 +60,13 @@ A language model generates text one token at a time. If one early token changes,
 | Precision / quantization | How many bits are used to store each model number. fp32 = 32-bit (reference), fp16 = 16-bit, q4 / q4f16 = about 4-bit compressed weights. Fewer bits means smaller and faster, but possibly less accurate. |
 | ONNX | A standard model file format. Transformers.js uses ONNX files, so the native and browser runs can load the exact same file. |
 | WebLLM build (q4f16_1, q4f32_1) | Pre-compiled 4-bit versions of the model made by the WebLLM / MLC project for browsers. |
-| Greedy decoding | Always choosing the single most likely next token. This removes randomness, so any difference between setups comes from computation, not chance. |
+| Sampling disabled | Deterministic inference: sampling was disabled (`do_sample = false`) in Transformers.js, and WebLLM used `temperature = 0` with `seed = 0`. |
 | Flip | A question where one setup is correct and another is wrong (or the other way round). |
 
 ## 4. Research questions
 
 - RQ1, runtime effect: With exactly the same model file and code, does running in the browser change answers compared with native inference?
-- RQ2, GPU vendor effect: Does the same browser setup give different answers on an NVIDIA discrete GPU (GeForce RTX 2050) versus an Intel integrated GPU (UHD Graphics Gen-12LP) within the same machine?
+- RQ2, GPU vendor effect: Does the same browser setup give different answers on Intel-labelled integrated GPU versus NVIDIA-labelled discrete GPU runs on the same machine? (Adapter labels reflect a main-page `navigator.gpu.requestAdapter()` check after switching Windows Graphics Settings rather than internal worker attestation).
 - RQ3, deployment effect: How far are ready-made browser model builds (for example WebLLM's 4-bit builds) from a full-precision reference, and how much of that gap is explained by compression rather than by the browser?
 - RQ4, hidden changes: Do overall accuracy numbers hide answer flips? Two setups can have the same accuracy while getting different questions right.
 
@@ -84,7 +80,7 @@ The most common mistake in comparisons like this is to change several things at 
 |---|---|---|---|
 | Native Node.js (CPU) fp32 vs browser WebGPU fp32 | Model repository ID/dtype, library version, prompts | Runtime and hardware path | RQ1 |
 | Native Node.js q4 vs browser WASM q4 | Model repository ID/dtype, library version, prompts | Runtime (native CPU vs browser CPU) | RQ1 |
-| Browser WebGPU on NVIDIA vs on Intel | Everything except the GPU | GPU vendor | RQ2 |
+| Browser WebGPU Intel-labelled vs NVIDIA-labelled | Everything except adapter assignment | GPU adapter | RQ2 |
 | Browser fp16 run repeated twice on the same GPU | Everything | Nothing (repeatability check) | Baseline noise |
 | Full-precision reference vs each compressed build (fp16, q4f16, WebLLM q4f16_1, q4f32_1) | Model, prompts | Compression and runtime | RQ3 |
 | Chrome vs Edge on the same GPU (optional) | Everything except the browser | Browser | Minor check |
@@ -96,7 +92,7 @@ The most common mistake in comparisons like this is to change several things at 
 - One shared file (`site/harness.js`) builds every prompt and extracts every answer. The native runner and the browser runner both import it, so prompts and scoring are identical.
 - The exact system prompt across all setups is: `"You are Qwen, created by Alibaba Cloud. You are a helpful assistant."`
 - The same Transformers.js version (4.3.0) is used natively and in the browser; WebLLM runs on version 0.2.85.
-- All runs use greedy decoding (temperature = 0, no sampling) and fixed maximum output lengths (5 new tokens for MMLU, 320 new tokens for GSM8K).
+- For deterministic evaluation, sampling was disabled (`do_sample = false`) in Transformers.js, and WebLLM used `temperature = 0` with `seed = 0`. Fixed maximum output lengths were set to 5 new tokens for MMLU and 320 new tokens for GSM8K.
 - Each results file records the exact setup: library versions, model, precision, browser user agent, and the GPU reported by WebGPU.
 
 ### 5.3 Model
@@ -151,7 +147,7 @@ For every setup and task:
 Statistics:
 
 - McNemar's exact test checks whether accuracy differences between two setups on the same questions are larger than chance (formatted as `< 1e-4` when $p < 0.0001$).
-- Bootstrap 95% confidence intervals are reported for agreement rates.
+- Bootstrap 95% confidence intervals (`agree_ci`) reflect item-resampling variability across the fixed 300-question set (where an observed 0% sample yields a degenerate `[0.000, 0.000]` percentile interval) and do not capture variance across devices, drivers, or sessions.
 
 The flip idea comes from work on model compression showing that even when compressed models keep similar accuracy, individual answers change in both directions ([Accuracy is Not All You Need](https://openreview.net/pdf/7ecf82af167db2fa1a4c2972d42f903ce9507ee9.pdf)). Recent work also links internal output differences to such decision flips ([How Divergence Becomes Decision Flips in Compressed Language Models](https://arxiv.org/html/2610.00694v1)). We apply this lens to browser deployment, which, as far as we found, these works do not study.
 
@@ -173,11 +169,11 @@ This related-work check was done on 3 October 2026 and will be repeated before p
 ## 8. What we will not claim
 
 - We will not claim that results hold for all models, all browsers, or all GPUs. We test one small model (`Qwen2.5-0.5B-Instruct`), Chromium-based browsers, and two GPU targets on our testbed (NVIDIA GeForce RTX 2050 discrete and Intel UHD Graphics integrated).
-- We will not claim that Transformers.js WebGPU degradation represents a general flaw in the WebGPU standard. The collapse observed in Transformers.js v4.3.0 WebGPU (`fp16`/`q4f16`) is a failure mode of that specific runtime and shader compilation pipeline on the host environment; the independent WebLLM runtime operates over WebGPU on the exact same hardware without collapse.
+- We will not claim that Transformers.js WebGPU degradation represents a diagnosed shader defect or an inherent flaw in the WebGPU standard. The collapse observed in Transformers.js v4.3.0 WebGPU (`fp16`/`q4f16`) is a reproducible failure of the tested Transformers.js v4.3.0 / ONNX Runtime Web WebGPU path relative to requested-dtype CPU controls, without claiming identical historical weight bytes (since SHA-256 weight hashes were not pinned across the Oct 8–9 and Oct 28 runs) or a diagnosed shader defect. The independent WebLLM runtime operates over WebGPU on the exact same hardware without generation collapse.
 - We will not claim that differences between native CPU Transformers.js and browser WebLLM are purely runtime effects. WebLLM uses its own pre-compiled TVM model builds, proprietary quantization kernels, and execution engine; these comparisons evaluate end-to-end deployment stacks (RQ3) rather than isolated runtime differences alone.
 - We will not claim causes we did not test directly. If browser and native differ, we report the exact token divergence points and behavioral differences, and suggest likely numerical or allocation causes, but do not prove low-level driver or kernel mechanics without kernel-level profiling.
 - We will not claim that WebLLM `q4f32_1` vs `q4f16_1` isolates "32-bit accumulation" alone; these configurations differ across the MLC compilation stack in `model_dtype` (`float16` vs `float32`).
-- We will not claim that `std::bad_alloc` proves full-precision models cannot physically fit in browser WebGPU memory generally; rather, the tested `fp32` ONNX deployment failed during initialization with `ERROR_CODE: 6 (std::bad_alloc)` on this laptop and loader stack, with the exact allocation site (host RAM, WASM heap, or GPU buffer) undetermined.
+- We will not claim that `std::bad_alloc` proves full-precision models cannot physically fit in browser WebGPU memory generally or that compression is universally mandatory in browsers; rather, the tested `fp32` ONNX deployment failed during initialization with `ERROR_CODE: 6 (std::bad_alloc)` on this laptop under this loader stack, with the exact allocation site (host RAM, WASM heap, or GPU buffer) undetermined.
 - Benchmark accuracy for a 0.5B model is modest in absolute terms. That is expected; the focus is measuring answer fidelity across execution environments.
 
 ## 9. Known limitations

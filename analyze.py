@@ -10,37 +10,48 @@ Writes:
   results/summary_holm.csv
   results/summary.md (all 5 tables formatted)
 """
-import glob, json, os, sys, random, csv, re, statistics
+import glob, json, os, sys, random, csv, re, statistics, platform, hashlib
+import scipy
+import transformers
 from scipy.stats import binomtest
 
 RD = sys.argv[1] if len(sys.argv) > 1 else "results"
 REF = sys.argv[2] if len(sys.argv) > 2 else "native-node-cpu/fp32"
 
 # -----------------------------------------------------------------------------
-# Tokenizer loading with strict error handling (no whitespace split fallback)
+# Tokenizer loading with strict error handling & explicit revision pinning
 # -----------------------------------------------------------------------------
+TOKENIZER_REVISION = "7ae557604adf67be50417f59c2c2f167def9a775"
 TOKENIZER = None
 TOKENIZER_NAME = None
 TOKENIZER_COMMIT = None
+TOKENIZER_JSON_SHA256 = None
 
 try:
     from transformers import AutoTokenizer
     repo_id = "Qwen/Qwen2.5-0.5B-Instruct"
     try:
-        TOKENIZER = AutoTokenizer.from_pretrained(repo_id, local_files_only=True)
+        TOKENIZER = AutoTokenizer.from_pretrained(
+            repo_id, revision=TOKENIZER_REVISION, local_files_only=True
+        )
     except Exception:
-        TOKENIZER = AutoTokenizer.from_pretrained(repo_id)
+        TOKENIZER = AutoTokenizer.from_pretrained(
+            repo_id, revision=TOKENIZER_REVISION
+        )
     TOKENIZER_NAME = getattr(TOKENIZER, "name_or_path", repo_id)
-    
-    # Check cached commit hash if present
-    snap_dir = os.path.expanduser("~/.cache/huggingface/hub/models--Qwen--Qwen2.5-0.5B-Instruct/snapshots")
-    if os.path.exists(snap_dir) and os.listdir(snap_dir):
-        TOKENIZER_COMMIT = os.listdir(snap_dir)[0]
+    TOKENIZER_COMMIT = TOKENIZER_REVISION
+
+    # Check cached tokenizer.json SHA-256 checksum
+    snap_dir = os.path.expanduser(f"~/.cache/huggingface/hub/models--Qwen--Qwen2.5-0.5B-Instruct/snapshots/{TOKENIZER_REVISION}")
+    tok_json_path = os.path.join(snap_dir, "tokenizer.json")
+    if os.path.exists(tok_json_path):
+        with open(tok_json_path, "rb") as fp:
+            TOKENIZER_JSON_SHA256 = hashlib.sha256(fp.read()).hexdigest()
     else:
-        TOKENIZER_COMMIT = "unknown"
+        TOKENIZER_JSON_SHA256 = "unavailable (local snapshot not found)"
 except Exception as e:
     raise RuntimeError(
-        f"CRITICAL: Failed to load tokenizer for 'Qwen/Qwen2.5-0.5B-Instruct'. "
+        f"CRITICAL: Failed to load tokenizer for 'Qwen/Qwen2.5-0.5B-Instruct' with revision '{TOKENIZER_REVISION}'. "
         f"A valid AutoTokenizer is strictly required; whitespace fallback is disabled. Error: {e}"
     )
 
@@ -182,13 +193,19 @@ def main():
             c_parsed = sum(res[i]["correct"] for i in ids if res[i]["pred"] is not None)
             acc_parsed_val = round(c_parsed / n_valid, 4) if n_valid > 0 else 0.0
 
-            # Strict extraction
+            # Strict extraction audit:
+            # strict_n_parsed counts responses matching the restrictive regex regardless of correctness
+            # strict_n_correct counts responses matching the restrictive regex that match gold
+            strict_n_parsed = 0
             strict_n_correct = 0
             for i in ids:
                 txt = res[i].get("text", "")
                 sp = strict_mmlu(txt) if task == "mmlu" else strict_gsm(txt)
+                if sp is not None:
+                    strict_n_parsed += 1
                 if sp == res[i]["gold"]:
                     strict_n_correct += 1
+            strict_parse_rate = round(strict_n_parsed / n, 4)
             strict_acc = round(strict_n_correct / n, 4)
 
             # Cap tracking
@@ -210,7 +227,10 @@ def main():
                 n_unparsed=n_unparsed, parse_rate=parse_rate,
                 acc_parsed_num_den=f"{c_parsed}/{n_valid}",
                 acc_parsed=acc_parsed_val,
-                strict_n_correct=strict_n_correct, strict_acc=strict_acc,
+                strict_n_parsed=strict_n_parsed,
+                strict_parse_rate=strict_parse_rate,
+                strict_n_correct=strict_n_correct,
+                strict_acc=strict_acc,
                 n_at_token_cap=n_at_token_cap, cap_source=cap_source
             )
             t_parsing_rows.append(row_csv)
@@ -220,6 +240,7 @@ def main():
                 task_acc=task_acc,
                 n_unparsed=n_unparsed, parse_rate=parse_rate,
                 acc_parsed=format_frac(c_parsed, n_valid),
+                strict_parse_rate=format_frac(strict_n_parsed, n),
                 strict_acc=format_frac(strict_n_correct, n),
                 n_at_token_cap=n_at_token_cap, cap_source=cap_source,
                 gpu=get_gpu_label(setup, d["meta"])
@@ -429,7 +450,7 @@ def main():
             c_parsed = sum(res[i]["correct"] for i in ids if res[i]["pred"] is not None)
             acc_parsed_val = round(c_parsed / n_valid, 4) if n_valid > 0 else 0.0
 
-            # Strict accuracy
+            # Strict extraction accuracy
             strict_correct = 0
             for i in ids:
                 txt = res[i].get("text", "")
@@ -536,13 +557,10 @@ def main():
     # =========================================================================
     # TABLE 5 / CSV 5: 22-Comparison Holm Step-Down Multiple-Testing Table
     # =========================================================================
-    # Exactly 22 experimental comparisons: all 11 full non-reference runs x 2 tasks
-    # (Excludes reference run, repeat run, and 20-item diagnostic check)
     t_holm_candidates = [
         r for r in t_primary_rows
         if r["setup"] != REF and "repeat" not in r["setup"] and "check" not in r["setup"]
     ]
-    # Sort ascending by unadjusted p-value
     t_holm_candidates.sort(key=lambda r: r["mcnemar_p_unadjusted"])
     m_holm = len(t_holm_candidates)  # 22
 
@@ -584,7 +602,7 @@ def main():
     # =========================================================================
     p_cols = [
         "setup", "task", "n", "task_acc", "n_unparsed", "parse_rate",
-        "acc_parsed", "strict_acc", "n_at_token_cap", "cap_source", "gpu"
+        "acc_parsed", "strict_parse_rate", "strict_acc", "n_at_token_cap", "cap_source", "gpu"
     ]
     m_cols = [
         "browser_setup", "native_ref_setup", "task", "n",
@@ -610,12 +628,17 @@ def main():
         "setup", "task", "flips", "mcnemar_p_unadjusted", "holm_rank", "mcnemar_p_holm", "significant_at_0_05"
     ]
 
+    py_ver = platform.python_version()
+    scipy_ver = scipy.__version__
+    trans_ver = transformers.__version__
+
     md_content = f"""# Benchmark Summary & Multi-Table Static Audit
 
 **Reference Baseline:** `{REF}`  
 **Host Hardware:** Single Windows 11 Laptop — 13th Gen Intel(R) Core(TM) i5-13420H CPU, NVIDIA GeForce RTX 2050 (4 GB GDDR6), Intel(R) UHD Graphics (Gen-12LP), 8 GB RAM  
 **Software Environment:** Windows 11 x64, Google Chrome 139.0.0.0, Node.js v20+, Transformers.js 4.3.0, WebLLM 0.2.85  
-**Tokenizer Audit:** `{TOKENIZER_NAME}` (Snapshot Commit: `{TOKENIZER_COMMIT}`)  
+**Analysis Execution Environment:** Python `{py_ver}`, scipy `{scipy_ver}`, transformers `{trans_ver}`  
+**Tokenizer Audit:** `{TOKENIZER_NAME}` (Pinned Revision: `{TOKENIZER_REVISION}`, `tokenizer.json` SHA-256: `{TOKENIZER_JSON_SHA256}`)  
 
 ---
 
@@ -623,13 +646,15 @@ def main():
 
 *Evaluates all 28 experimental configurations against the native CPU fp32 baseline. Separates unparsed predictions, reports valid-only and all-outcome agreement with explicit fractions, decomposes flips, and tracks token sequence divergence across all paired items.*
 
+*Statistical Note on Confidence Intervals:* Percentile bootstrap confidence intervals (`agree_ci`) reflect item-resampling variability across the fixed 300-question set (where an observed 0% sample yields a degenerate `[0.000, 0.000]` percentile interval) and do not capture variance across devices, drivers, or sessions.
+
 {make_md_table(t_primary_md_rows, t1_cols)}
 
 ---
 
 ## Table 2: Direct Matched-Dtype Comparisons: Native CPU vs. Browser (RQ1)
 
-*Evaluates runtime effects by matching model repository identifiers and dtypes between Native Node.js CPU and Browser WebGPU/WASM across all paired item evaluations. (Note: Repository IDs and dtypes were strictly matched; file SHA-256 hashes were not pinned across the Oct 8–9 and Oct 28 run dates).*
+*Evaluates runtime effects by matching model repository identifiers and dtypes between Native Node.js CPU and Browser WebGPU/WASM across all paired item evaluations. (Note: Repository IDs and requested dtypes were strictly matched; file SHA-256 hashes were not pinned across the Oct 8–9 and Oct 28 run dates).*
 
 {make_md_table(t_matched_md_rows, m_cols)}
 
@@ -637,19 +662,19 @@ def main():
 
 ---
 
-## Table 3: Cross-Adapter Pairwise Consistency: Intel UHD vs. NVIDIA RTX 2050 (RQ2)
+## Table 3: Cross-Adapter Pairwise Consistency: Intel-Labelled vs. NVIDIA-Labelled Runs (RQ2)
 
-*Directly compares the Intel UHD Graphics integrated GPU run against the NVIDIA GeForce RTX 2050 discrete GPU run on the same laptop for each browser engine build.*
+*Directly compares the Intel-labelled integrated GPU run against the NVIDIA-labelled discrete GPU run on the same laptop for each browser engine build. Adapter labels reflect a main-page `navigator.gpu.requestAdapter()` check after switching Windows Graphics Settings rather than internal worker attestation.*
 
 {make_md_table(t_cross_md_rows, c_cols)}
 
-*Key takeaway:* Under `webllm/q4f16_1` (where MLC `model_dtype` is `float16`), cross-GPU numerical drift produces divergent text on 10/200 (5.0%) MMLU items and 54/100 (54.0%) GSM8K items. Under `webllm/q4f32_1` (where MLC `model_dtype` is `float32`), cross-adapter consistency reaches **100.00% exact text agreement (200/200 MMLU and 100/100 GSM8K)** with 0 divergent predictions.
+*Key takeaway:* Under `webllm/q4f16_1` (where MLC `model_dtype` is `float16`), cross-adapter numerical drift produces divergent text on 10/200 (5.0%) MMLU items and 54/100 (54.0%) GSM8K items. Under `webllm/q4f32_1` (where MLC `model_dtype` is `float32`), cross-adapter consistency reaches **100.00% exact text agreement (200/200 MMLU and 100/100 GSM8K)** with 0 divergent predictions.
 
 ---
 
 ## Table 4: Parsing & Truncation Audit (Strict vs. Permissive Extraction)
 
-*Evaluates regex extraction parse rates, accuracy restricted to valid parsed responses, strict marker extraction (`r'\\b([ABCD])\\b'` on MMLU, `r'answer is\\s*([\\-0-9,\\.]+)'` on GSM8K), and token limit saturation (5 tokens for MMLU, 320 tokens for GSM8K).*
+*Evaluates regex extraction parse rates, accuracy restricted to valid parsed responses, strict-extraction parse rates (`strict_parse_rate`) and accuracy (`strict_acc` requiring both a restrictive regex match—standalone `r'\\b([ABCD])\\b'` on MMLU or `r'answer is\\s*([\\-0-9,\\.]+)'` on GSM8K—and a correct answer), and token limit saturation (5 tokens for MMLU, 320 tokens for GSM8K).*
 
 {make_md_table(t_parsing_md_rows, p_cols)}
 

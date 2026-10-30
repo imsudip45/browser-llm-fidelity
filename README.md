@@ -12,21 +12,21 @@
 
 ## Summary
 
-Most studies on browser AI only measure how fast a model runs. Developers usually assume that loading the same model in a web browser gives the same answers as running it normally on a computer. To test this assumption, we evaluated `Qwen2.5-0.5B-Instruct` across 14 run logs comprising **3,920 individual item evaluations** (13 full runs of 300 questions—200 MMLU multiple-choice questions and 100 GSM8K math problems—plus a 20-question diagnostic browser WASM CPU run) with randomness turned off (greedy decoding). Using one shared prompt and scoring harness (`site/harness.js`) across 28 task configurations on the same laptop, we compared native CPU baselines against browser runs across two GPUs (NVIDIA GeForce RTX 2050 discrete and Intel UHD Graphics integrated).
+Most studies on browser AI only measure how fast a model runs. Developers usually assume that loading the same model in a web browser gives the same answers as running it normally on a computer. Client-side inference can avoid per-request inference-server computation and can keep prompts local when the application does not transmit them. To test whether client-side execution preserves model output fidelity, we evaluated `Qwen2.5-0.5B-Instruct` across 14 run logs comprising **3,920 individual item evaluations** (13 full runs of 300 questions—200 MMLU multiple-choice questions and 100 GSM8K math problems—plus a 20-question diagnostic browser WASM CPU run). For deterministic evaluation, sampling was disabled (`do_sample = false`) in Transformers.js, and WebLLM used `temperature = 0` with `seed = 0`. Using one shared prompt and scoring harness (`site/harness.js`) across 28 task configurations on the same laptop, we compared native CPU baselines against browser runs across Intel-labelled integrated GPU and NVIDIA-labelled discrete GPU setups.
 
 ## What We Found
 
-1. **Same weight repository and dtypes, reproducible browser WebGPU degradation (Transformers.js):** When executing `fp16` and `q4f16` ONNX model files natively on the CPU, generation behaves normally (`fp16` achieves 98.12% valid agreement with `fp32` on MMLU and 31.0% accuracy on GSM8K). However, loading those identical ONNX graphs into Transformers.js v4.3.0 WebGPU causes severe output degradation on both Intel and NVIDIA GPUs (0%–1% accuracy on GSM8K, 2%–7% on MMLU, diverging immediately at token 0 in $\ge 82\%$ of cases). Running a matched 20-item diagnostic check on browser WebAssembly CPU (`tjs-wasm/q4/cpu-chrome-check`) produces **100% exact text (20/20) and exact token-ID (20/20) parity** against native Node.js CPU `q4`, confirming that the model weights and prompt harness are identical and isolating the collapse specifically to the Transformers.js WebGPU execution path on this host. *(Note: Model repository IDs and dtypes were strictly matched, while SHA-256 hashes were not pinned across run dates).*
+1. **Same weight repository and dtypes, reproducible browser WebGPU degradation (Transformers.js):** When executing `fp16` and `q4f16` ONNX model files natively on the CPU, generation behaves normally (`fp16` achieves 98.12% valid agreement with `fp32` on MMLU and 31.0% accuracy on GSM8K). However, loading those identical ONNX graphs into Transformers.js v4.3.0 WebGPU causes severe output degradation on both Intel-labelled and NVIDIA-labelled runs (0%–1% accuracy on GSM8K, 2%–7% on MMLU, diverging immediately at token 0 in $\ge 82\%$ of cases). This is a reproducible failure of the tested Transformers.js v4.3.0 / ONNX Runtime Web WebGPU path relative to requested-dtype CPU controls, without claiming identical historical weight bytes (since SHA-256 weight hashes were not pinned across the Oct 8–9 and Oct 28 runs) or a diagnosed shader defect. Running a matched 20-item diagnostic check on browser WebAssembly CPU (`tjs-wasm/q4/cpu-chrome-check`) produces **100% exact text (20/20) and exact token-ID (20/20) parity** against native Node.js CPU `q4`, confirming that the model weights and prompt harness are identical and isolating the collapse specifically to the Transformers.js WebGPU execution path on this host.
 2. **Overall accuracy hides answer flips and unparsed responses:** On MMLU multiple-choice questions, WebLLM builds achieve 42.0%–44.5% overall accuracy compared to 39.0% for native `fp32` CPU. However, looking at individual questions reveals that native `fp32` CPU fails to produce an isolated letter on 39/200 questions (80.5% parse rate; 38 reached the 5-token cap and 1 terminated early as `"WEP"` + EOS). Restricting comparison strictly to valid parsed pairs (`valid_agree`), WebLLM agrees on **61.5%–64.6%** of valid answers (`99/161` to `104/161`). In `webllm/q4f16_1/nvidia-chrome`, 30 questions flipped from wrong to correct (`w2c`), but 12 of those 30 were items where the CPU reference failed to parse (`unparsed_ref_to_correct = 12`).
-3. **Cross-adapter numerical drift eliminated under 32-bit `model_dtype`:** In WebLLM, using `q4f16_1` (where MLC `model_dtype` is `float16`) causes numerical discrepancies between Intel integrated and NVIDIA discrete GPUs, resulting in divergent text on 10/200 (5.0%) MMLU items and 54/100 (54.0%) GSM8K items. Upgrading to `q4f32_1` (where MLC `model_dtype` is `float32`) achieves **100.00% exact text agreement (200/200 MMLU and 100/100 GSM8K)** between Intel UHD and NVIDIA RTX 2050 GPUs.
-4. **Host memory constraints during initialization:** Attempting to initialize unquantized `fp32` ONNX models in browser WebGPU fails during initialization with `ERROR_CODE: 6 (std::bad_alloc)` on both GPUs under our host's 4 GB VRAM / 8 GB system RAM configuration, demonstrating why client-side deployment strictly mandates 16-bit or 4-bit compression.
+3. **Cross-adapter numerical drift eliminated under 32-bit `model_dtype`:** In WebLLM, using `q4f16_1` (where MLC `model_dtype` is `float16`) causes numerical discrepancies between Intel-labelled and NVIDIA-labelled runs (adapter labels reflect a main-page `navigator.gpu.requestAdapter()` check after switching Windows Graphics Settings rather than internal worker attestation), resulting in divergent text on 10/200 (5.0%) MMLU items and 54/100 (54.0%) GSM8K items. Upgrading to `q4f32_1` (where MLC `model_dtype` is `float32`) achieves **100.00% exact text agreement (200/200 MMLU and 100/100 GSM8K)** between Intel-labelled and NVIDIA-labelled setups.
+4. **Host memory allocation constraints during initialization:** Attempting to initialize unquantized `fp32` ONNX models in browser WebGPU failed during model initialization with `ERROR_CODE: 6 (std::bad_alloc)` on this laptop under this loader stack, with the exact allocation site (host RAM, WASM heap, or GPU buffer) undetermined, without demonstrating that model compression is universally mandatory in browsers.
 
 ---
 
 ## Research Questions
 
-1. **RQ1 (Runtime effect):** With the exact same weight file, does running in the browser change answers compared with native inference?
-2. **RQ2 (GPU vendor effect):** Does the same browser setup give different answers on an NVIDIA discrete GPU versus an Intel integrated GPU within the same machine?
+1. **RQ1 (Runtime effect):** With matched model repository IDs and dtypes, does running in the browser change answers compared with native inference?
+2. **RQ2 (GPU adapter effect):** Does the same browser setup give different answers on Intel-labelled integrated GPU versus NVIDIA-labelled discrete GPU runs within the same machine?
 3. **RQ3 (Deployment effect):** How far are ready-made browser builds (such as WebLLM `q4f16_1` and `q4f32_1`) from a full-precision native reference, and how much of that gap comes from compression versus the browser?
 4. **RQ4 (Hidden answer flips):** Do overall accuracy numbers hide individual questions flipping between right and wrong?
 
@@ -43,6 +43,8 @@ Machine-readable exports are available in [results/summary_parsing.csv](results/
 ## Table 1:Primary Comparison vs. Full-Precision Reference (`native-node-cpu/fp32`)
 
 *Evaluates all 28 experimental configurations against the native CPU fp32 baseline. Separates unparsed predictions, reports valid-only and all-outcome agreement with explicit fractions, decomposes flips, and tracks token sequence divergence across all paired items.*
+
+*Statistical Note on Confidence Intervals:* Percentile bootstrap confidence intervals (`agree_ci`) reflect item-resampling variability across the fixed 300-question set (where an observed 0% sample yields a degenerate `[0.000, 0.000]` percentile interval) and do not capture variance across devices, drivers, or sessions.
 
 | setup | task | n | acc | ref_acc | strict_acc | n_unparsed | parse_rate | acc_parsed | valid_agree | all_outcome_agree | agree_ci | n_both_valid | n_joint_invalid | flips_c2w | flips_w2c | unparsed_ref_to_correct | correct_to_unparsed_test | mcnemar_p | exact_text | median_first_div_token | n_diverged | n_div_at_0 | n_div_at_1 | div_source | n_at_token_cap | gpu |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -79,7 +81,7 @@ Machine-readable exports are available in [results/summary_parsing.csv](results/
 
 ## Table 2: Direct Matched-Dtype Comparisons: Native CPU vs. Browser (RQ1)
 
-*Evaluates runtime effects by matching model repository identifiers and dtypes between Native Node.js CPU and Browser WebGPU/WASM across all paired item evaluations. (Note: Repository IDs and dtypes were strictly matched; file SHA-256 hashes were not pinned across the Oct 8–9 and Oct 28 run dates).*
+*Evaluates runtime effects by matching model repository identifiers and dtypes between Native Node.js CPU and Browser WebGPU/WASM across all paired item evaluations. (Note: Repository IDs and requested dtypes were strictly matched; file SHA-256 hashes were not pinned across the Oct 8–9 and Oct 28 run dates).*
 
 | browser_setup | native_ref_setup | task | n | browser_acc | native_acc | valid_agree | all_outcome_agree | exact_text | exact_token_ids | median_first_div_token | n_diverged | n_div_at_0 | n_div_at_1 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -100,9 +102,9 @@ Machine-readable exports are available in [results/summary_parsing.csv](results/
 
 ---
 
-## Table 3: Cross-Adapter Pairwise Consistency: Intel UHD vs. NVIDIA RTX 2050 (RQ2)
+## Table 3: Cross-Adapter Pairwise Consistency: Intel-Labelled vs. NVIDIA-Labelled Runs (RQ2)
 
-*Directly compares the Intel UHD Graphics integrated GPU run against the NVIDIA GeForce RTX 2050 discrete GPU run on the same laptop for each browser engine build.*
+*Directly compares the Intel-labelled integrated GPU run against the NVIDIA-labelled discrete GPU run on the same laptop for each browser engine build. Adapter labels reflect a main-page `navigator.gpu.requestAdapter()` check after switching Windows Graphics Settings rather than internal worker attestation.*
 
 | build | task | n | intel_acc | nvidia_acc | valid_agree | all_outcome_agree | exact_text | n_both_valid | n_diff_predictions | n_diff_text | median_first_div_token | n_diverged | div_source |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -115,44 +117,44 @@ Machine-readable exports are available in [results/summary_parsing.csv](results/
 | webllm/q4f16_1 | mmlu | 200 | 0.42 | 0.43 | 194/199 (97.49%) | 194/200 (97.00%) | 190/200 (95.00%) | 199 | 6 | 10 | 0 | 10 | retokenized_text |
 | webllm/q4f32_1 | mmlu | 200 | 0.445 | 0.445 | 194/194 (100.00%) | 200/200 (100.00%) | 200/200 (100.00%) | 194 | 0 | 0 |  | 0 | retokenized_text |
 
-*Key takeaway:* Under `webllm/q4f16_1` (where MLC `model_dtype` is `float16`), cross-GPU numerical drift produces divergent text on 10/200 (5.0%) MMLU items and 54/100 (54.0%) GSM8K items. Under `webllm/q4f32_1` (where MLC `model_dtype` is `float32`), cross-adapter consistency reaches **100.00% exact text agreement (200/200 MMLU and 100/100 GSM8K)** with 0 divergent predictions.
+*Key takeaway:* Under `webllm/q4f16_1` (where MLC `model_dtype` is `float16`), cross-adapter numerical drift produces divergent text on 10/200 (5.0%) MMLU items and 54/100 (54.0%) GSM8K items. Under `webllm/q4f32_1` (where MLC `model_dtype` is `float32`), cross-adapter consistency reaches **100.00% exact text agreement (200/200 MMLU and 100/100 GSM8K)** with 0 divergent predictions.
 
 ---
 
 ## Table 4: Parsing & Truncation Audit (Strict vs. Permissive Extraction)
 
-*Evaluates regex extraction parse rates, accuracy restricted to valid parsed responses, strict marker extraction (`r'\b([ABCD])\b'` on MMLU, `r'answer is\s*([\-0-9,\.]+)'` on GSM8K), and token limit saturation (5 tokens for MMLU, 320 tokens for GSM8K).*
+*Evaluates regex extraction parse rates, accuracy restricted to valid parsed responses, strict-extraction parse rates (`strict_parse_rate`) and accuracy (`strict_acc` requiring both a restrictive regex match—standalone `r'\b([ABCD])\b'` on MMLU or `r'answer is\s*([\-0-9,\.]+)'` on GSM8K—and a correct answer), and token limit saturation (5 tokens for MMLU, 320 tokens for GSM8K).*
 
-| setup | task | n | task_acc | n_unparsed | parse_rate | acc_parsed | strict_acc | n_at_token_cap | cap_source | gpu |
-|---|---|---|---|---|---|---|---|---|---|---|
-| browser/tjs-wasm/q4/cpu-chrome-check | gsm8k | 10 | 0.4 | 0 | 1.0 | 4/10 (40.00%) | 0/10 (0.00%) | 5 | raw_token_ids | cpu (wasm) |
-| browser/tjs-webgpu/fp16/intel-chrome | gsm8k | 100 | 0.0 | 44 | 0.56 | 0/56 (0.00%) | 0/100 (0.00%) | 76 | raw_token_ids | intel |
-| browser/tjs-webgpu/fp16/nvidia-chrome | gsm8k | 100 | 0.01 | 49 | 0.51 | 1/51 (1.96%) | 0/100 (0.00%) | 68 | raw_token_ids | nvidia |
-| browser/tjs-webgpu/fp16/nvidia-chrome-repeat | gsm8k | 100 | 0.01 | 49 | 0.51 | 1/51 (1.96%) | 0/100 (0.00%) | 68 | raw_token_ids | nvidia |
-| browser/tjs-webgpu/q4f16/intel-chrome | gsm8k | 100 | 0.0 | 96 | 0.04 | 0/4 (0.00%) | 0/100 (0.00%) | 89 | raw_token_ids | intel |
-| browser/tjs-webgpu/q4f16/nvidia-chrome | gsm8k | 100 | 0.0 | 95 | 0.05 | 0/5 (0.00%) | 0/100 (0.00%) | 91 | raw_token_ids | nvidia |
-| browser/webllm/q4f16_1/intel-chrome | gsm8k | 100 | 0.16 | 0 | 1.0 | 16/100 (16.00%) | 0/100 (0.00%) | 50 | retokenized_text | intel |
-| browser/webllm/q4f16_1/nvidia-chrome | gsm8k | 100 | 0.19 | 0 | 1.0 | 19/100 (19.00%) | 0/100 (0.00%) | 49 | retokenized_text | nvidia |
-| browser/webllm/q4f32_1/intel-chrome | gsm8k | 100 | 0.18 | 0 | 1.0 | 18/100 (18.00%) | 1/100 (1.00%) | 45 | retokenized_text | intel |
-| browser/webllm/q4f32_1/nvidia-chrome | gsm8k | 100 | 0.18 | 0 | 1.0 | 18/100 (18.00%) | 1/100 (1.00%) | 45 | retokenized_text | nvidia |
-| native-node-cpu/fp16 | gsm8k | 100 | 0.31 | 0 | 1.0 | 31/100 (31.00%) | 0/100 (0.00%) | 41 | raw_token_ids | cpu |
-| native-node-cpu/fp32 | gsm8k | 100 | 0.29 | 0 | 1.0 | 29/100 (29.00%) | 0/100 (0.00%) | 44 | raw_token_ids | cpu |
-| native-node-cpu/q4 | gsm8k | 100 | 0.2 | 0 | 1.0 | 20/100 (20.00%) | 1/100 (1.00%) | 50 | raw_token_ids | cpu |
-| native-node-cpu/q4f16 | gsm8k | 100 | 0.24 | 0 | 1.0 | 24/100 (24.00%) | 1/100 (1.00%) | 50 | raw_token_ids | cpu |
-| browser/tjs-wasm/q4/cpu-chrome-check | mmlu | 10 | 0.2 | 2 | 0.8 | 2/8 (25.00%) | 2/10 (20.00%) | 2 | raw_token_ids | cpu (wasm) |
-| browser/tjs-webgpu/fp16/intel-chrome | mmlu | 200 | 0.055 | 146 | 0.27 | 11/54 (20.37%) | 7/200 (3.50%) | 180 | raw_token_ids | intel |
-| browser/tjs-webgpu/fp16/nvidia-chrome | mmlu | 200 | 0.07 | 146 | 0.27 | 14/54 (25.93%) | 10/200 (5.00%) | 187 | raw_token_ids | nvidia |
-| browser/tjs-webgpu/fp16/nvidia-chrome-repeat | mmlu | 200 | 0.07 | 146 | 0.27 | 14/54 (25.93%) | 10/200 (5.00%) | 187 | raw_token_ids | nvidia |
-| browser/tjs-webgpu/q4f16/intel-chrome | mmlu | 200 | 0.025 | 182 | 0.09 | 5/18 (27.78%) | 1/200 (0.50%) | 155 | raw_token_ids | intel |
-| browser/tjs-webgpu/q4f16/nvidia-chrome | mmlu | 200 | 0.02 | 184 | 0.08 | 4/16 (25.00%) | 1/200 (0.50%) | 160 | raw_token_ids | nvidia |
-| browser/webllm/q4f16_1/intel-chrome | mmlu | 200 | 0.42 | 1 | 0.995 | 84/199 (42.21%) | 84/200 (42.00%) | 39 | retokenized_text | intel |
-| browser/webllm/q4f16_1/nvidia-chrome | mmlu | 200 | 0.43 | 0 | 1.0 | 86/200 (43.00%) | 86/200 (43.00%) | 36 | retokenized_text | nvidia |
-| browser/webllm/q4f32_1/intel-chrome | mmlu | 200 | 0.445 | 6 | 0.97 | 89/194 (45.88%) | 89/200 (44.50%) | 40 | retokenized_text | intel |
-| browser/webllm/q4f32_1/nvidia-chrome | mmlu | 200 | 0.445 | 6 | 0.97 | 89/194 (45.88%) | 89/200 (44.50%) | 40 | retokenized_text | nvidia |
-| native-node-cpu/fp16 | mmlu | 200 | 0.38 | 40 | 0.8 | 76/160 (47.50%) | 76/200 (38.00%) | 91 | raw_token_ids | cpu |
-| native-node-cpu/fp32 | mmlu | 200 | 0.39 | 39 | 0.805 | 78/161 (48.45%) | 78/200 (39.00%) | 104 | raw_token_ids | cpu |
-| native-node-cpu/q4 | mmlu | 200 | 0.455 | 14 | 0.93 | 91/186 (48.92%) | 91/200 (45.50%) | 50 | raw_token_ids | cpu |
-| native-node-cpu/q4f16 | mmlu | 200 | 0.465 | 15 | 0.925 | 93/185 (50.27%) | 93/200 (46.50%) | 47 | raw_token_ids | cpu |
+| setup | task | n | task_acc | n_unparsed | parse_rate | acc_parsed | strict_parse_rate | strict_acc | n_at_token_cap | cap_source | gpu |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| browser/tjs-wasm/q4/cpu-chrome-check | gsm8k | 10 | 0.4 | 0 | 1.0 | 4/10 (40.00%) | 0/10 (0.00%) | 0/10 (0.00%) | 5 | raw_token_ids | cpu (wasm) |
+| browser/tjs-webgpu/fp16/intel-chrome | gsm8k | 100 | 0.0 | 44 | 0.56 | 0/56 (0.00%) | 0/100 (0.00%) | 0/100 (0.00%) | 76 | raw_token_ids | intel |
+| browser/tjs-webgpu/fp16/nvidia-chrome | gsm8k | 100 | 0.01 | 49 | 0.51 | 1/51 (1.96%) | 0/100 (0.00%) | 0/100 (0.00%) | 68 | raw_token_ids | nvidia |
+| browser/tjs-webgpu/fp16/nvidia-chrome-repeat | gsm8k | 100 | 0.01 | 49 | 0.51 | 1/51 (1.96%) | 0/100 (0.00%) | 0/100 (0.00%) | 68 | raw_token_ids | nvidia |
+| browser/tjs-webgpu/q4f16/intel-chrome | gsm8k | 100 | 0.0 | 96 | 0.04 | 0/4 (0.00%) | 0/100 (0.00%) | 0/100 (0.00%) | 89 | raw_token_ids | intel |
+| browser/tjs-webgpu/q4f16/nvidia-chrome | gsm8k | 100 | 0.0 | 95 | 0.05 | 0/5 (0.00%) | 0/100 (0.00%) | 0/100 (0.00%) | 91 | raw_token_ids | nvidia |
+| browser/webllm/q4f16_1/intel-chrome | gsm8k | 100 | 0.16 | 0 | 1.0 | 16/100 (16.00%) | 0/100 (0.00%) | 0/100 (0.00%) | 50 | retokenized_text | intel |
+| browser/webllm/q4f16_1/nvidia-chrome | gsm8k | 100 | 0.19 | 0 | 1.0 | 19/100 (19.00%) | 0/100 (0.00%) | 0/100 (0.00%) | 49 | retokenized_text | nvidia |
+| browser/webllm/q4f32_1/intel-chrome | gsm8k | 100 | 0.18 | 0 | 1.0 | 18/100 (18.00%) | 2/100 (2.00%) | 1/100 (1.00%) | 45 | retokenized_text | intel |
+| browser/webllm/q4f32_1/nvidia-chrome | gsm8k | 100 | 0.18 | 0 | 1.0 | 18/100 (18.00%) | 2/100 (2.00%) | 1/100 (1.00%) | 45 | retokenized_text | nvidia |
+| native-node-cpu/fp16 | gsm8k | 100 | 0.31 | 0 | 1.0 | 31/100 (31.00%) | 0/100 (0.00%) | 0/100 (0.00%) | 41 | raw_token_ids | cpu |
+| native-node-cpu/fp32 | gsm8k | 100 | 0.29 | 0 | 1.0 | 29/100 (29.00%) | 0/100 (0.00%) | 0/100 (0.00%) | 44 | raw_token_ids | cpu |
+| native-node-cpu/q4 | gsm8k | 100 | 0.2 | 0 | 1.0 | 20/100 (20.00%) | 3/100 (3.00%) | 1/100 (1.00%) | 50 | raw_token_ids | cpu |
+| native-node-cpu/q4f16 | gsm8k | 100 | 0.24 | 0 | 1.0 | 24/100 (24.00%) | 3/100 (3.00%) | 1/100 (1.00%) | 50 | raw_token_ids | cpu |
+| browser/tjs-wasm/q4/cpu-chrome-check | mmlu | 10 | 0.2 | 2 | 0.8 | 2/8 (25.00%) | 8/10 (80.00%) | 2/10 (20.00%) | 2 | raw_token_ids | cpu (wasm) |
+| browser/tjs-webgpu/fp16/intel-chrome | mmlu | 200 | 0.055 | 146 | 0.27 | 11/54 (20.37%) | 43/200 (21.50%) | 7/200 (3.50%) | 180 | raw_token_ids | intel |
+| browser/tjs-webgpu/fp16/nvidia-chrome | mmlu | 200 | 0.07 | 146 | 0.27 | 14/54 (25.93%) | 45/200 (22.50%) | 10/200 (5.00%) | 187 | raw_token_ids | nvidia |
+| browser/tjs-webgpu/fp16/nvidia-chrome-repeat | mmlu | 200 | 0.07 | 146 | 0.27 | 14/54 (25.93%) | 45/200 (22.50%) | 10/200 (5.00%) | 187 | raw_token_ids | nvidia |
+| browser/tjs-webgpu/q4f16/intel-chrome | mmlu | 200 | 0.025 | 182 | 0.09 | 5/18 (27.78%) | 6/200 (3.00%) | 1/200 (0.50%) | 155 | raw_token_ids | intel |
+| browser/tjs-webgpu/q4f16/nvidia-chrome | mmlu | 200 | 0.02 | 184 | 0.08 | 4/16 (25.00%) | 7/200 (3.50%) | 1/200 (0.50%) | 160 | raw_token_ids | nvidia |
+| browser/webllm/q4f16_1/intel-chrome | mmlu | 200 | 0.42 | 1 | 0.995 | 84/199 (42.21%) | 199/200 (99.50%) | 84/200 (42.00%) | 39 | retokenized_text | intel |
+| browser/webllm/q4f16_1/nvidia-chrome | mmlu | 200 | 0.43 | 0 | 1.0 | 86/200 (43.00%) | 200/200 (100.00%) | 86/200 (43.00%) | 36 | retokenized_text | nvidia |
+| browser/webllm/q4f32_1/intel-chrome | mmlu | 200 | 0.445 | 6 | 0.97 | 89/194 (45.88%) | 194/200 (97.00%) | 89/200 (44.50%) | 40 | retokenized_text | intel |
+| browser/webllm/q4f32_1/nvidia-chrome | mmlu | 200 | 0.445 | 6 | 0.97 | 89/194 (45.88%) | 194/200 (97.00%) | 89/200 (44.50%) | 40 | retokenized_text | nvidia |
+| native-node-cpu/fp16 | mmlu | 200 | 0.38 | 40 | 0.8 | 76/160 (47.50%) | 160/200 (80.00%) | 76/200 (38.00%) | 91 | raw_token_ids | cpu |
+| native-node-cpu/fp32 | mmlu | 200 | 0.39 | 39 | 0.805 | 78/161 (48.45%) | 161/200 (80.50%) | 78/200 (39.00%) | 104 | raw_token_ids | cpu |
+| native-node-cpu/q4 | mmlu | 200 | 0.455 | 14 | 0.93 | 91/186 (48.92%) | 186/200 (93.00%) | 91/200 (45.50%) | 50 | raw_token_ids | cpu |
+| native-node-cpu/q4f16 | mmlu | 200 | 0.465 | 15 | 0.925 | 93/185 (50.27%) | 185/200 (92.50%) | 93/200 (46.50%) | 47 | raw_token_ids | cpu |
 
 *Unparsed Response Findings:* In `native-node-cpu/fp32` on MMLU, 39/200 items failed letter-only extraction: 38 saturated the 5-token limit without emitting a standalone letter, and 1 terminated early at 3 tokens (`"WEP"` + EOS, ID `mmlu-1554`).
 
@@ -236,7 +238,7 @@ python analyze.py results native-node-cpu/fp32
 ## Fixed Experimental Settings
 
 - **System Prompt:** `"You are Qwen, created by Alibaba Cloud. You are a helpful assistant."`
-- **Decoding:** Greedy decoding (temperature = 0, no sampling), identical prompt templates across all setups.
+- **Decoding:** Deterministic inference: sampling was disabled (`do_sample = false`) in Transformers.js, and WebLLM used `temperature = 0` with `seed = 0`.
 - **MMLU (200 questions):** Stratified across all 57 subjects (capped at 4 per subject); answer with a single letter (A–D), max 5 new tokens.
 - **GSM8K (100 problems):** Step-by-step math reasoning ending with "The answer is N.", max 320 new tokens.
 - **Library Versions:** Transformers.js 4.3.0 (both native Node.js and browser), WebLLM 0.2.85, Chrome 139.0.0.0.

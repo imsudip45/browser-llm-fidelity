@@ -3,13 +3,16 @@
 **Reference Baseline:** `native-node-cpu/fp32`  
 **Host Hardware:** Single Windows 11 Laptop — 13th Gen Intel(R) Core(TM) i5-13420H CPU, NVIDIA GeForce RTX 2050 (4 GB GDDR6), Intel(R) UHD Graphics (Gen-12LP), 8 GB RAM  
 **Software Environment:** Windows 11 x64, Google Chrome 139.0.0.0, Node.js v20+, Transformers.js 4.3.0, WebLLM 0.2.85  
-**Tokenizer Audit:** `Qwen/Qwen2.5-0.5B-Instruct` (Snapshot Commit: `7ae557604adf67be50417f59c2c2f167def9a775`)  
+**Analysis Execution Environment:** Python `3.14.2`, scipy `1.18.1`, transformers `5.17.0`  
+**Tokenizer Audit:** `Qwen/Qwen2.5-0.5B-Instruct` (Pinned Revision: `7ae557604adf67be50417f59c2c2f167def9a775`, `tokenizer.json` SHA-256: `c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539`)  
 
 ---
 
 ## Table 1: Primary Comparison vs. Full-Precision Reference (`native-node-cpu/fp32`)
 
 *Evaluates all 28 experimental configurations against the native CPU fp32 baseline. Separates unparsed predictions, reports valid-only and all-outcome agreement with explicit fractions, decomposes flips, and tracks token sequence divergence across all paired items.*
+
+*Statistical Note on Confidence Intervals:* Percentile bootstrap confidence intervals (`agree_ci`) reflect item-resampling variability across the fixed 300-question set (where an observed 0% sample yields a degenerate `[0.000, 0.000]` percentile interval) and do not capture variance across devices, drivers, or sessions.
 
 | setup | task | n | acc | ref_acc | strict_acc | n_unparsed | parse_rate | acc_parsed | valid_agree | all_outcome_agree | agree_ci | n_both_valid | n_joint_invalid | flips_c2w | flips_w2c | unparsed_ref_to_correct | correct_to_unparsed_test | mcnemar_p | exact_text | median_first_div_token | n_diverged | n_div_at_0 | n_div_at_1 | div_source | n_at_token_cap | gpu |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -46,7 +49,7 @@
 
 ## Table 2: Direct Matched-Dtype Comparisons: Native CPU vs. Browser (RQ1)
 
-*Evaluates runtime effects by matching model repository identifiers and dtypes between Native Node.js CPU and Browser WebGPU/WASM across all paired item evaluations. (Note: Repository IDs and dtypes were strictly matched; file SHA-256 hashes were not pinned across the Oct 8–9 and Oct 28 run dates).*
+*Evaluates runtime effects by matching model repository identifiers and dtypes between Native Node.js CPU and Browser WebGPU/WASM across all paired item evaluations. (Note: Repository IDs and requested dtypes were strictly matched; file SHA-256 hashes were not pinned across the Oct 8–9 and Oct 28 run dates).*
 
 | browser_setup | native_ref_setup | task | n | browser_acc | native_acc | valid_agree | all_outcome_agree | exact_text | exact_token_ids | median_first_div_token | n_diverged | n_div_at_0 | n_div_at_1 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -67,9 +70,9 @@
 
 ---
 
-## Table 3: Cross-Adapter Pairwise Consistency: Intel UHD vs. NVIDIA RTX 2050 (RQ2)
+## Table 3: Cross-Adapter Pairwise Consistency: Intel-Labelled vs. NVIDIA-Labelled Runs (RQ2)
 
-*Directly compares the Intel UHD Graphics integrated GPU run against the NVIDIA GeForce RTX 2050 discrete GPU run on the same laptop for each browser engine build.*
+*Directly compares the Intel-labelled integrated GPU run against the NVIDIA-labelled discrete GPU run on the same laptop for each browser engine build. Adapter labels reflect a main-page `navigator.gpu.requestAdapter()` check after switching Windows Graphics Settings rather than internal worker attestation.*
 
 | build | task | n | intel_acc | nvidia_acc | valid_agree | all_outcome_agree | exact_text | n_both_valid | n_diff_predictions | n_diff_text | median_first_div_token | n_diverged | div_source |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -82,44 +85,44 @@
 | webllm/q4f16_1 | mmlu | 200 | 0.42 | 0.43 | 194/199 (97.49%) | 194/200 (97.00%) | 190/200 (95.00%) | 199 | 6 | 10 | 0 | 10 | retokenized_text |
 | webllm/q4f32_1 | mmlu | 200 | 0.445 | 0.445 | 194/194 (100.00%) | 200/200 (100.00%) | 200/200 (100.00%) | 194 | 0 | 0 |  | 0 | retokenized_text |
 
-*Key takeaway:* Under `webllm/q4f16_1` (where MLC `model_dtype` is `float16`), cross-GPU numerical drift produces divergent text on 10/200 (5.0%) MMLU items and 54/100 (54.0%) GSM8K items. Under `webllm/q4f32_1` (where MLC `model_dtype` is `float32`), cross-adapter consistency reaches **100.00% exact text agreement (200/200 MMLU and 100/100 GSM8K)** with 0 divergent predictions.
+*Key takeaway:* Under `webllm/q4f16_1` (where MLC `model_dtype` is `float16`), cross-adapter numerical drift produces divergent text on 10/200 (5.0%) MMLU items and 54/100 (54.0%) GSM8K items. Under `webllm/q4f32_1` (where MLC `model_dtype` is `float32`), cross-adapter consistency reaches **100.00% exact text agreement (200/200 MMLU and 100/100 GSM8K)** with 0 divergent predictions.
 
 ---
 
 ## Table 4: Parsing & Truncation Audit (Strict vs. Permissive Extraction)
 
-*Evaluates regex extraction parse rates, accuracy restricted to valid parsed responses, strict marker extraction (`r'\b([ABCD])\b'` on MMLU, `r'answer is\s*([\-0-9,\.]+)'` on GSM8K), and token limit saturation (5 tokens for MMLU, 320 tokens for GSM8K).*
+*Evaluates regex extraction parse rates, accuracy restricted to valid parsed responses, strict-extraction parse rates (`strict_parse_rate`) and accuracy (`strict_acc` requiring both a restrictive regex match—standalone `r'\b([ABCD])\b'` on MMLU or `r'answer is\s*([\-0-9,\.]+)'` on GSM8K—and a correct answer), and token limit saturation (5 tokens for MMLU, 320 tokens for GSM8K).*
 
-| setup | task | n | task_acc | n_unparsed | parse_rate | acc_parsed | strict_acc | n_at_token_cap | cap_source | gpu |
-|---|---|---|---|---|---|---|---|---|---|---|
-| browser/tjs-wasm/q4/cpu-chrome-check | gsm8k | 10 | 0.4 | 0 | 1.0 | 4/10 (40.00%) | 0/10 (0.00%) | 5 | raw_token_ids | cpu (wasm) |
-| browser/tjs-webgpu/fp16/intel-chrome | gsm8k | 100 | 0.0 | 44 | 0.56 | 0/56 (0.00%) | 0/100 (0.00%) | 76 | raw_token_ids | intel |
-| browser/tjs-webgpu/fp16/nvidia-chrome | gsm8k | 100 | 0.01 | 49 | 0.51 | 1/51 (1.96%) | 0/100 (0.00%) | 68 | raw_token_ids | nvidia |
-| browser/tjs-webgpu/fp16/nvidia-chrome-repeat | gsm8k | 100 | 0.01 | 49 | 0.51 | 1/51 (1.96%) | 0/100 (0.00%) | 68 | raw_token_ids | nvidia |
-| browser/tjs-webgpu/q4f16/intel-chrome | gsm8k | 100 | 0.0 | 96 | 0.04 | 0/4 (0.00%) | 0/100 (0.00%) | 89 | raw_token_ids | intel |
-| browser/tjs-webgpu/q4f16/nvidia-chrome | gsm8k | 100 | 0.0 | 95 | 0.05 | 0/5 (0.00%) | 0/100 (0.00%) | 91 | raw_token_ids | nvidia |
-| browser/webllm/q4f16_1/intel-chrome | gsm8k | 100 | 0.16 | 0 | 1.0 | 16/100 (16.00%) | 0/100 (0.00%) | 50 | retokenized_text | intel |
-| browser/webllm/q4f16_1/nvidia-chrome | gsm8k | 100 | 0.19 | 0 | 1.0 | 19/100 (19.00%) | 0/100 (0.00%) | 49 | retokenized_text | nvidia |
-| browser/webllm/q4f32_1/intel-chrome | gsm8k | 100 | 0.18 | 0 | 1.0 | 18/100 (18.00%) | 1/100 (1.00%) | 45 | retokenized_text | intel |
-| browser/webllm/q4f32_1/nvidia-chrome | gsm8k | 100 | 0.18 | 0 | 1.0 | 18/100 (18.00%) | 1/100 (1.00%) | 45 | retokenized_text | nvidia |
-| native-node-cpu/fp16 | gsm8k | 100 | 0.31 | 0 | 1.0 | 31/100 (31.00%) | 0/100 (0.00%) | 41 | raw_token_ids | cpu |
-| native-node-cpu/fp32 | gsm8k | 100 | 0.29 | 0 | 1.0 | 29/100 (29.00%) | 0/100 (0.00%) | 44 | raw_token_ids | cpu |
-| native-node-cpu/q4 | gsm8k | 100 | 0.2 | 0 | 1.0 | 20/100 (20.00%) | 1/100 (1.00%) | 50 | raw_token_ids | cpu |
-| native-node-cpu/q4f16 | gsm8k | 100 | 0.24 | 0 | 1.0 | 24/100 (24.00%) | 1/100 (1.00%) | 50 | raw_token_ids | cpu |
-| browser/tjs-wasm/q4/cpu-chrome-check | mmlu | 10 | 0.2 | 2 | 0.8 | 2/8 (25.00%) | 2/10 (20.00%) | 2 | raw_token_ids | cpu (wasm) |
-| browser/tjs-webgpu/fp16/intel-chrome | mmlu | 200 | 0.055 | 146 | 0.27 | 11/54 (20.37%) | 7/200 (3.50%) | 180 | raw_token_ids | intel |
-| browser/tjs-webgpu/fp16/nvidia-chrome | mmlu | 200 | 0.07 | 146 | 0.27 | 14/54 (25.93%) | 10/200 (5.00%) | 187 | raw_token_ids | nvidia |
-| browser/tjs-webgpu/fp16/nvidia-chrome-repeat | mmlu | 200 | 0.07 | 146 | 0.27 | 14/54 (25.93%) | 10/200 (5.00%) | 187 | raw_token_ids | nvidia |
-| browser/tjs-webgpu/q4f16/intel-chrome | mmlu | 200 | 0.025 | 182 | 0.09 | 5/18 (27.78%) | 1/200 (0.50%) | 155 | raw_token_ids | intel |
-| browser/tjs-webgpu/q4f16/nvidia-chrome | mmlu | 200 | 0.02 | 184 | 0.08 | 4/16 (25.00%) | 1/200 (0.50%) | 160 | raw_token_ids | nvidia |
-| browser/webllm/q4f16_1/intel-chrome | mmlu | 200 | 0.42 | 1 | 0.995 | 84/199 (42.21%) | 84/200 (42.00%) | 39 | retokenized_text | intel |
-| browser/webllm/q4f16_1/nvidia-chrome | mmlu | 200 | 0.43 | 0 | 1.0 | 86/200 (43.00%) | 86/200 (43.00%) | 36 | retokenized_text | nvidia |
-| browser/webllm/q4f32_1/intel-chrome | mmlu | 200 | 0.445 | 6 | 0.97 | 89/194 (45.88%) | 89/200 (44.50%) | 40 | retokenized_text | intel |
-| browser/webllm/q4f32_1/nvidia-chrome | mmlu | 200 | 0.445 | 6 | 0.97 | 89/194 (45.88%) | 89/200 (44.50%) | 40 | retokenized_text | nvidia |
-| native-node-cpu/fp16 | mmlu | 200 | 0.38 | 40 | 0.8 | 76/160 (47.50%) | 76/200 (38.00%) | 91 | raw_token_ids | cpu |
-| native-node-cpu/fp32 | mmlu | 200 | 0.39 | 39 | 0.805 | 78/161 (48.45%) | 78/200 (39.00%) | 104 | raw_token_ids | cpu |
-| native-node-cpu/q4 | mmlu | 200 | 0.455 | 14 | 0.93 | 91/186 (48.92%) | 91/200 (45.50%) | 50 | raw_token_ids | cpu |
-| native-node-cpu/q4f16 | mmlu | 200 | 0.465 | 15 | 0.925 | 93/185 (50.27%) | 93/200 (46.50%) | 47 | raw_token_ids | cpu |
+| setup | task | n | task_acc | n_unparsed | parse_rate | acc_parsed | strict_parse_rate | strict_acc | n_at_token_cap | cap_source | gpu |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| browser/tjs-wasm/q4/cpu-chrome-check | gsm8k | 10 | 0.4 | 0 | 1.0 | 4/10 (40.00%) | 0/10 (0.00%) | 0/10 (0.00%) | 5 | raw_token_ids | cpu (wasm) |
+| browser/tjs-webgpu/fp16/intel-chrome | gsm8k | 100 | 0.0 | 44 | 0.56 | 0/56 (0.00%) | 0/100 (0.00%) | 0/100 (0.00%) | 76 | raw_token_ids | intel |
+| browser/tjs-webgpu/fp16/nvidia-chrome | gsm8k | 100 | 0.01 | 49 | 0.51 | 1/51 (1.96%) | 0/100 (0.00%) | 0/100 (0.00%) | 68 | raw_token_ids | nvidia |
+| browser/tjs-webgpu/fp16/nvidia-chrome-repeat | gsm8k | 100 | 0.01 | 49 | 0.51 | 1/51 (1.96%) | 0/100 (0.00%) | 0/100 (0.00%) | 68 | raw_token_ids | nvidia |
+| browser/tjs-webgpu/q4f16/intel-chrome | gsm8k | 100 | 0.0 | 96 | 0.04 | 0/4 (0.00%) | 0/100 (0.00%) | 0/100 (0.00%) | 89 | raw_token_ids | intel |
+| browser/tjs-webgpu/q4f16/nvidia-chrome | gsm8k | 100 | 0.0 | 95 | 0.05 | 0/5 (0.00%) | 0/100 (0.00%) | 0/100 (0.00%) | 91 | raw_token_ids | nvidia |
+| browser/webllm/q4f16_1/intel-chrome | gsm8k | 100 | 0.16 | 0 | 1.0 | 16/100 (16.00%) | 0/100 (0.00%) | 0/100 (0.00%) | 50 | retokenized_text | intel |
+| browser/webllm/q4f16_1/nvidia-chrome | gsm8k | 100 | 0.19 | 0 | 1.0 | 19/100 (19.00%) | 0/100 (0.00%) | 0/100 (0.00%) | 49 | retokenized_text | nvidia |
+| browser/webllm/q4f32_1/intel-chrome | gsm8k | 100 | 0.18 | 0 | 1.0 | 18/100 (18.00%) | 2/100 (2.00%) | 1/100 (1.00%) | 45 | retokenized_text | intel |
+| browser/webllm/q4f32_1/nvidia-chrome | gsm8k | 100 | 0.18 | 0 | 1.0 | 18/100 (18.00%) | 2/100 (2.00%) | 1/100 (1.00%) | 45 | retokenized_text | nvidia |
+| native-node-cpu/fp16 | gsm8k | 100 | 0.31 | 0 | 1.0 | 31/100 (31.00%) | 0/100 (0.00%) | 0/100 (0.00%) | 41 | raw_token_ids | cpu |
+| native-node-cpu/fp32 | gsm8k | 100 | 0.29 | 0 | 1.0 | 29/100 (29.00%) | 0/100 (0.00%) | 0/100 (0.00%) | 44 | raw_token_ids | cpu |
+| native-node-cpu/q4 | gsm8k | 100 | 0.2 | 0 | 1.0 | 20/100 (20.00%) | 3/100 (3.00%) | 1/100 (1.00%) | 50 | raw_token_ids | cpu |
+| native-node-cpu/q4f16 | gsm8k | 100 | 0.24 | 0 | 1.0 | 24/100 (24.00%) | 3/100 (3.00%) | 1/100 (1.00%) | 50 | raw_token_ids | cpu |
+| browser/tjs-wasm/q4/cpu-chrome-check | mmlu | 10 | 0.2 | 2 | 0.8 | 2/8 (25.00%) | 8/10 (80.00%) | 2/10 (20.00%) | 2 | raw_token_ids | cpu (wasm) |
+| browser/tjs-webgpu/fp16/intel-chrome | mmlu | 200 | 0.055 | 146 | 0.27 | 11/54 (20.37%) | 43/200 (21.50%) | 7/200 (3.50%) | 180 | raw_token_ids | intel |
+| browser/tjs-webgpu/fp16/nvidia-chrome | mmlu | 200 | 0.07 | 146 | 0.27 | 14/54 (25.93%) | 45/200 (22.50%) | 10/200 (5.00%) | 187 | raw_token_ids | nvidia |
+| browser/tjs-webgpu/fp16/nvidia-chrome-repeat | mmlu | 200 | 0.07 | 146 | 0.27 | 14/54 (25.93%) | 45/200 (22.50%) | 10/200 (5.00%) | 187 | raw_token_ids | nvidia |
+| browser/tjs-webgpu/q4f16/intel-chrome | mmlu | 200 | 0.025 | 182 | 0.09 | 5/18 (27.78%) | 6/200 (3.00%) | 1/200 (0.50%) | 155 | raw_token_ids | intel |
+| browser/tjs-webgpu/q4f16/nvidia-chrome | mmlu | 200 | 0.02 | 184 | 0.08 | 4/16 (25.00%) | 7/200 (3.50%) | 1/200 (0.50%) | 160 | raw_token_ids | nvidia |
+| browser/webllm/q4f16_1/intel-chrome | mmlu | 200 | 0.42 | 1 | 0.995 | 84/199 (42.21%) | 199/200 (99.50%) | 84/200 (42.00%) | 39 | retokenized_text | intel |
+| browser/webllm/q4f16_1/nvidia-chrome | mmlu | 200 | 0.43 | 0 | 1.0 | 86/200 (43.00%) | 200/200 (100.00%) | 86/200 (43.00%) | 36 | retokenized_text | nvidia |
+| browser/webllm/q4f32_1/intel-chrome | mmlu | 200 | 0.445 | 6 | 0.97 | 89/194 (45.88%) | 194/200 (97.00%) | 89/200 (44.50%) | 40 | retokenized_text | intel |
+| browser/webllm/q4f32_1/nvidia-chrome | mmlu | 200 | 0.445 | 6 | 0.97 | 89/194 (45.88%) | 194/200 (97.00%) | 89/200 (44.50%) | 40 | retokenized_text | nvidia |
+| native-node-cpu/fp16 | mmlu | 200 | 0.38 | 40 | 0.8 | 76/160 (47.50%) | 160/200 (80.00%) | 76/200 (38.00%) | 91 | raw_token_ids | cpu |
+| native-node-cpu/fp32 | mmlu | 200 | 0.39 | 39 | 0.805 | 78/161 (48.45%) | 161/200 (80.50%) | 78/200 (39.00%) | 104 | raw_token_ids | cpu |
+| native-node-cpu/q4 | mmlu | 200 | 0.455 | 14 | 0.93 | 91/186 (48.92%) | 186/200 (93.00%) | 91/200 (45.50%) | 50 | raw_token_ids | cpu |
+| native-node-cpu/q4f16 | mmlu | 200 | 0.465 | 15 | 0.925 | 93/185 (50.27%) | 185/200 (92.50%) | 93/200 (46.50%) | 47 | raw_token_ids | cpu |
 
 *Unparsed Response Findings:* In `native-node-cpu/fp32` on MMLU, 39/200 items failed letter-only extraction: 38 saturated the 5-token limit without emitting a standalone letter, and 1 terminated early at 3 tokens (`"WEP"` + EOS, ID `mmlu-1554`).
 

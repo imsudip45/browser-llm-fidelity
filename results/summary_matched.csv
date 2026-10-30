@@ -1,0 +1,13 @@
+browser_setup,native_ref_setup,task,n,browser_acc,native_acc,valid_agree_num_den,valid_agree,all_outcome_agree_num_den,all_outcome_agree,exact_text_num_den,exact_text,exact_token_ids_num_den,exact_token_ids,median_first_div_token,n_diverged,n_div_at_0,n_div_at_1,div_source,n_both_valid
+browser/tjs-wasm/q4/cpu-chrome-check,native-node-cpu/q4,gsm8k,10,0.4,0.4,10/10,1.0,10/10,1.0,10/10,1.0,10/10,1.0,,0,0,0,raw_token_ids,10
+browser/tjs-webgpu/fp16/intel-chrome,native-node-cpu/fp16,gsm8k,100,0.0,0.31,0/56,0.0,0/100,0.0,0/100,0.0,0/100,0.0,0,100,87,4,raw_token_ids,56
+browser/tjs-webgpu/fp16/nvidia-chrome,native-node-cpu/fp16,gsm8k,100,0.01,0.31,0/51,0.0,0/100,0.0,0/100,0.0,0/100,0.0,0,100,82,8,raw_token_ids,51
+browser/tjs-webgpu/fp16/nvidia-chrome-repeat,native-node-cpu/fp16,gsm8k,100,0.01,0.31,0/51,0.0,0/100,0.0,0/100,0.0,0/100,0.0,0,100,82,8,raw_token_ids,51
+browser/tjs-webgpu/q4f16/intel-chrome,native-node-cpu/q4f16,gsm8k,100,0.0,0.24,0/4,0.0,0/100,0.0,0/100,0.0,0/100,0.0,0,100,100,0,raw_token_ids,4
+browser/tjs-webgpu/q4f16/nvidia-chrome,native-node-cpu/q4f16,gsm8k,100,0.0,0.24,1/5,0.2,1/100,0.01,0/100,0.0,0/100,0.0,0,100,100,0,raw_token_ids,5
+browser/tjs-wasm/q4/cpu-chrome-check,native-node-cpu/q4,mmlu,10,0.2,0.2,8/8,1.0,10/10,1.0,10/10,1.0,10/10,1.0,,0,0,0,raw_token_ids,8
+browser/tjs-webgpu/fp16/intel-chrome,native-node-cpu/fp16,mmlu,200,0.055,0.38,13/43,0.3023,42/200,0.21,0/200,0.0,0/200,0.0,0,200,196,3,raw_token_ids,43
+browser/tjs-webgpu/fp16/nvidia-chrome,native-node-cpu/fp16,mmlu,200,0.07,0.38,11/45,0.2444,42/200,0.21,1/200,0.005,1/200,0.005,0,199,196,2,raw_token_ids,45
+browser/tjs-webgpu/fp16/nvidia-chrome-repeat,native-node-cpu/fp16,mmlu,200,0.07,0.38,11/45,0.2444,42/200,0.21,1/200,0.005,1/200,0.005,0,199,196,2,raw_token_ids,45
+browser/tjs-webgpu/q4f16/intel-chrome,native-node-cpu/q4f16,mmlu,200,0.025,0.465,3/17,0.1765,17/200,0.085,1/200,0.005,1/200,0.005,0,199,193,6,raw_token_ids,17
+browser/tjs-webgpu/q4f16/nvidia-chrome,native-node-cpu/q4f16,mmlu,200,0.02,0.465,1/16,0.0625,16/200,0.08,0/200,0.0,0/200,0.0,0,200,193,7,raw_token_ids,16

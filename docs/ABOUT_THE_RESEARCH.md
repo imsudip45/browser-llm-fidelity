@@ -4,7 +4,7 @@ Title: "Does Running a Small LLM in the Browser Change Its Answers? Comparing Na
 
 Authors: Sudip Niroula (lead author), Mandip Pokharel (co-author)
 Status: Completed (October 2026)
-Archived DOI: https://doi.org/10.5281/zenodo.23760946
+Archived DOI: https://doi.org/10.5281/zenodo.23760946 (archives the raw v1.0.0 benchmark outputs and harness; the v1.1.x multi-table audit pipeline is maintained in this repository)
 Planned output: preprint on TechRxiv, with code and data in this repository (and an archived copy on Zenodo)
 
 This document explains, in plain language, what the study is about, why it matters, how it is designed, and what we will and will not claim. It is written so that a co-author, a reviewer, or an admissions committee can understand the project without reading the code.
@@ -82,12 +82,14 @@ The most common mistake in comparisons like this is to change several things at 
 
 | Comparison | Kept the same | Changed | Answers |
 |---|---|---|---|
-| Native Node.js (CPU) fp32 vs browser WebGPU fp32 | Model file, library version, prompts | Runtime and hardware path | RQ1 |
-| Native Node.js q4 vs browser WASM q4 | Model file, library version, prompts | Runtime (native CPU vs browser CPU) | RQ1 |
+| Native Node.js (CPU) fp32 vs browser WebGPU fp32 | Model repository ID/dtype, library version, prompts | Runtime and hardware path | RQ1 |
+| Native Node.js q4 vs browser WASM q4 | Model repository ID/dtype, library version, prompts | Runtime (native CPU vs browser CPU) | RQ1 |
 | Browser WebGPU on NVIDIA vs on Intel | Everything except the GPU | GPU vendor | RQ2 |
 | Browser fp16 run repeated twice on the same GPU | Everything | Nothing (repeatability check) | Baseline noise |
 | Full-precision reference vs each compressed build (fp16, q4f16, WebLLM q4f16_1, q4f32_1) | Model, prompts | Compression and runtime | RQ3 |
 | Chrome vs Edge on the same GPU (optional) | Everything except the browser | Browser | Minor check |
+
+*(Note on weight pinning: Model repository identifiers and dtypes were strictly matched across runs, while SHA-256 file hashes were not pinned across the Oct 8–9 and Oct 28 run dates).*
 
 ### 5.2 Fixed and shared components
 
@@ -174,14 +176,17 @@ This related-work check was done on 3 October 2026 and will be repeated before p
 - We will not claim that Transformers.js WebGPU degradation represents a general flaw in the WebGPU standard. The collapse observed in Transformers.js v4.3.0 WebGPU (`fp16`/`q4f16`) is a failure mode of that specific runtime and shader compilation pipeline on the host environment; the independent WebLLM runtime operates over WebGPU on the exact same hardware without collapse.
 - We will not claim that differences between native CPU Transformers.js and browser WebLLM are purely runtime effects. WebLLM uses its own pre-compiled TVM model builds, proprietary quantization kernels, and execution engine; these comparisons evaluate end-to-end deployment stacks (RQ3) rather than isolated runtime differences alone.
 - We will not claim causes we did not test directly. If browser and native differ, we report the exact token divergence points and behavioral differences, and suggest likely numerical or allocation causes, but do not prove low-level driver or kernel mechanics without kernel-level profiling.
+- We will not claim that WebLLM `q4f32_1` vs `q4f16_1` isolates "32-bit accumulation" alone; these configurations differ across the MLC compilation stack in `model_dtype` (`float16` vs `float32`).
+- We will not claim that `std::bad_alloc` proves full-precision models cannot physically fit in browser WebGPU memory generally; rather, the tested `fp32` ONNX deployment failed during initialization with `ERROR_CODE: 6 (std::bad_alloc)` on this laptop and loader stack, with the exact allocation site (host RAM, WASM heap, or GPU buffer) undetermined.
 - Benchmark accuracy for a 0.5B model is modest in absolute terms. That is expected; the focus is measuring answer fidelity across execution environments.
 
 ## 9. Known limitations
 
 - Fixed question sample: 300 questions per setup (200 MMLU, 100 GSM8K), totaling 3,920 item evaluations across 14 logs. While sufficient to detect statistically significant discrepancies and immediate token divergences, larger samples would provide finer confidence intervals.
-- Answer extraction sensitivity: Qwen2.5-0.5B sometimes outputs reasoning text without isolating a single letter (MMLU) or hits the 320-token limit without emitting `"The answer is N."` (GSM8K). We report parse rates and strict extraction metrics explicitly to quantify this limitation.
-- Memory constraints: Running unquantized `fp32` models under Transformers.js WebGPU fails on consumer laptops with 4 GB VRAM and 8 GB RAM (`std::bad_alloc`), requiring compressed formats for browser deployment.
-- Software drift: Browser, driver, and WebGPU implementation versions evolve rapidly; exact software versions are preserved in every JSON artifact.
+- Answer extraction sensitivity: Qwen2.5-0.5B sometimes outputs reasoning text without isolating a single letter (MMLU) or hits the 320-token limit without emitting `"The answer is N."` (GSM8K). In native `fp32` CPU on MMLU, 38 of 39 unparsed items saturated the 5-token cap, while 1 item terminated early at 3 tokens (`"WEP"` + EOS, failing letter-only extraction). We report parse rates and strict extraction metrics explicitly to quantify this limitation.
+- Memory constraints: Running unquantized `fp32` models under Transformers.js WebGPU fails during initialization on consumer laptops with 4 GB VRAM and 8 GB RAM (`std::bad_alloc`), requiring compressed formats for browser deployment.
+- Model weight hashes: Model repository identifiers and dtypes were strictly matched, but SHA-256 file hashes were not pinned across the Oct 8–9 and Oct 28 run dates.
+- Software drift: Browser, driver, and WebGPU implementation versions evolve rapidly; exact software versions are preserved in every JSON artifact. The Zenodo DOI `10.5281/zenodo.23760946` archives the raw `v1.0.0` benchmark data, whereas the updated audit pipeline (`v1.1.x`) is maintained in the git repository.
 
 ## 10. Ethics and data
 

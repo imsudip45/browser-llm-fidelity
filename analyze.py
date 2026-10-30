@@ -1,7 +1,14 @@
 """Compare every result file against reference setups and generate multi-table audit summaries.
 
 Usage: python analyze.py [results_dir] [reference_setup_substring]
-Writes results/summary.md (4 tables) and results/summary.csv (main table)
+Writes:
+  results/summary_parsing.csv
+  results/summary_matched.csv
+  results/summary_cross_adapter.csv
+  results/summary_primary.csv
+  results/summary.csv (copy of summary_primary.csv)
+  results/summary_holm.csv
+  results/summary.md (all 5 tables formatted)
 """
 import glob, json, os, sys, random, csv, re, statistics
 from scipy.stats import binomtest
@@ -9,28 +16,33 @@ from scipy.stats import binomtest
 RD = sys.argv[1] if len(sys.argv) > 1 else "results"
 REF = sys.argv[2] if len(sys.argv) > 2 else "native-node-cpu/fp32"
 
-# Optional Qwen2.5 tokenizer fallback for runtimes (like WebLLM) that omit token IDs
+# -----------------------------------------------------------------------------
+# Tokenizer loading with strict error handling (no whitespace split fallback)
+# -----------------------------------------------------------------------------
 TOKENIZER = None
+TOKENIZER_NAME = None
+TOKENIZER_COMMIT = None
+
 try:
     from transformers import AutoTokenizer
-    TOKENIZER = AutoTokenizer.from_pretrained("onnx-community/Qwen2.5-0.5B-Instruct", local_files_only=True)
-except Exception:
+    repo_id = "Qwen/Qwen2.5-0.5B-Instruct"
     try:
-        from transformers import AutoTokenizer
-        TOKENIZER = AutoTokenizer.from_pretrained("onnx-community/Qwen2.5-0.5B-Instruct")
+        TOKENIZER = AutoTokenizer.from_pretrained(repo_id, local_files_only=True)
     except Exception:
-        TOKENIZER = None
-
-
-def get_tokens(item):
-    """Return token ID list if present; otherwise tokenize text (or fallback to whitespace words)."""
-    ids = item.get("ids")
-    if ids is not None and len(ids) > 0:
-        return ids
-    text = item.get("text", "")
-    if TOKENIZER is not None:
-        return TOKENIZER.encode(text, add_special_tokens=False)
-    return text.split()
+        TOKENIZER = AutoTokenizer.from_pretrained(repo_id)
+    TOKENIZER_NAME = getattr(TOKENIZER, "name_or_path", repo_id)
+    
+    # Check cached commit hash if present
+    snap_dir = os.path.expanduser("~/.cache/huggingface/hub/models--Qwen--Qwen2.5-0.5B-Instruct/snapshots")
+    if os.path.exists(snap_dir) and os.listdir(snap_dir):
+        TOKENIZER_COMMIT = os.listdir(snap_dir)[0]
+    else:
+        TOKENIZER_COMMIT = "unknown"
+except Exception as e:
+    raise RuntimeError(
+        f"CRITICAL: Failed to load tokenizer for 'Qwen/Qwen2.5-0.5B-Instruct'. "
+        f"A valid AutoTokenizer is strictly required; whitespace fallback is disabled. Error: {e}"
+    )
 
 
 def norm_num(s):
@@ -46,13 +58,13 @@ def norm_num(s):
 
 
 def strict_mmlu(text):
-    """Strict MMLU extraction: requires standalone letter A-D via word boundaries without arbitrary fallback."""
+    """Strict MMLU extraction: requires standalone letter A-D via word boundaries."""
     m = re.search(r"\b([ABCD])\b", text)
     return m.group(1) if m else None
 
 
 def strict_gsm(text):
-    """Strict GSM8K extraction: requires explicit 'answer is <num>' pattern without fallback to trailing numbers."""
+    """Strict GSM8K extraction: requires explicit 'answer is <num>' pattern."""
     m = re.search(r"answer is\s*([\-0-9,\.]+)", text, re.IGNORECASE)
     return norm_num(m.group(1)) if m else None
 
@@ -72,6 +84,7 @@ def load():
 
 
 def first_div(a, b):
+    """Return index of first differing token ID between sequences a and b."""
     n = min(len(a), len(b))
     for i in range(n):
         if a[i] != b[i]:
@@ -83,6 +96,19 @@ def format_p(p):
     if p < 0.0001:
         return "< 1e-4"
     return str(round(p, 4))
+
+
+def format_frac(num, den):
+    """Format as 'num/den (pct%)'."""
+    pct = (num / den * 100.0) if den > 0 else 0.0
+    return f"{num}/{den} ({pct:.2f}%)"
+
+
+def format_median(divs):
+    if not divs:
+        return ""
+    m = statistics.median(divs)
+    return int(m) if isinstance(m, float) and m.is_integer() else round(m, 1)
 
 
 def boot_ci(xs, it=2000, seed=0):
@@ -106,36 +132,6 @@ def get_gpu_label(setup, meta):
     return (meta.get("gpu") or {}).get("description") or (meta.get("gpu") or {}).get("vendor") or meta.get("device", "")
 
 
-def calc_divergences(res_a, res_b, ids):
-    divs = []
-    for i in ids:
-        if res_a[i]["text"] == res_b[i]["text"]:
-            continue
-        a_raw, b_raw = res_a[i].get("ids"), res_b[i].get("ids")
-        if a_raw is not None and b_raw is not None and len(a_raw) > 0 and len(b_raw) > 0:
-            fd = first_div(a_raw, b_raw)
-        else:
-            if TOKENIZER is not None:
-                a_tok = TOKENIZER.encode(res_a[i].get("text", ""), add_special_tokens=False)
-                b_tok = TOKENIZER.encode(res_b[i].get("text", ""), add_special_tokens=False)
-            else:
-                a_tok = res_a[i].get("text", "").split()
-                b_tok = res_b[i].get("text", "").split()
-            fd = first_div(a_tok, b_tok)
-        if fd is not None:
-            divs.append(fd)
-        else:
-            divs.append(0)
-    return divs
-
-
-def format_median(divs):
-    if not divs:
-        return ""
-    m = statistics.median(divs)
-    return int(m) if isinstance(m, float) and m.is_integer() else round(m, 1)
-
-
 def make_md_table(rows, cols):
     lines = [
         "| " + " | ".join(cols) + " |",
@@ -146,6 +142,17 @@ def make_md_table(rows, cols):
     return "\n".join(lines)
 
 
+def write_csv(path, rows, fieldnames=None):
+    if not rows:
+        return
+    if fieldnames is None:
+        fieldnames = list(rows[0].keys())
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=fieldnames)
+        w.writeheader()
+        w.writerows(rows)
+
+
 def main():
     runs = load()
     if REF not in runs:
@@ -154,101 +161,77 @@ def main():
     ref = {r["id"]: r for r in runs[REF]["results"]}
 
     # =========================================================================
-    # TABLE 1: Primary Comparison vs. Full-Precision Reference (native fp32)
+    # TABLE 1 / CSV 1: Parsing & Truncation Audit
     # =========================================================================
-    t1_rows = []
+    t_parsing_rows = []
+    t_parsing_md_rows = []
+
     for setup, d in sorted(runs.items()):
         res = {r["id"]: r for r in d["results"]}
         for task in ["gsm8k", "mmlu"]:
-            ids = [i for i, r in res.items() if r["task"] == task and i in ref]
+            ids = [i for i, r in res.items() if r["task"] == task]
             if not ids:
                 continue
             n = len(ids)
-            acc = sum(res[i]["correct"] for i in ids) / n
-            racc = sum(ref[i]["correct"] for i in ids) / n
+            n_correct = sum(res[i]["correct"] for i in ids)
+            task_acc = round(n_correct / n, 4)
 
-            # Unparsed and parsed accuracy
             n_unparsed = sum(1 for i in ids if res[i]["pred"] is None)
-            parse_rate = (n - n_unparsed) / n
+            parse_rate = round((n - n_unparsed) / n, 4)
             n_valid = n - n_unparsed
-            acc_parsed = sum(res[i]["correct"] for i in ids if res[i]["pred"] is not None) / n_valid if n_valid > 0 else 0.0
+            c_parsed = sum(res[i]["correct"] for i in ids if res[i]["pred"] is not None)
+            acc_parsed_val = round(c_parsed / n_valid, 4) if n_valid > 0 else 0.0
 
-            # Strict accuracy audit
-            strict_correct = 0
+            # Strict extraction
+            strict_n_correct = 0
             for i in ids:
                 txt = res[i].get("text", "")
                 sp = strict_mmlu(txt) if task == "mmlu" else strict_gsm(txt)
                 if sp == res[i]["gold"]:
-                    strict_correct += 1
-            strict_acc = strict_correct / n
+                    strict_n_correct += 1
+            strict_acc = round(strict_n_correct / n, 4)
 
-            # Agreement metrics
-            all_outcome_agree = sum(1 for i in ids if res[i]["pred"] == ref[i]["pred"]) / n
-            both_valid = [i for i in ids if res[i]["pred"] is not None and ref[i]["pred"] is not None]
-            n_both_valid = len(both_valid)
-            valid_agree = sum(1 for i in both_valid if res[i]["pred"] == ref[i]["pred"]) / n_both_valid if n_both_valid > 0 else 0.0
-            n_joint_invalid = sum(1 for i in ids if res[i]["pred"] is None and ref[i]["pred"] is None)
+            # Cap tracking
+            has_raw = res[ids[0]].get("ids") is not None
+            cap_source = "raw_token_ids" if has_raw else "retokenized_text"
+            cap_limit = 5 if task == "mmlu" else 320
+            n_at_token_cap = 0
+            for i in ids:
+                if has_raw:
+                    tok_len = len(res[i]["ids"])
+                else:
+                    tok_len = len(TOKENIZER.encode(res[i].get("text", ""), add_special_tokens=False))
+                if tok_len >= cap_limit:
+                    n_at_token_cap += 1
 
-            # Flips decomposition
-            c2w = sum(1 for i in ids if ref[i]["correct"] and not res[i]["correct"])
-            w2c = sum(1 for i in ids if not ref[i]["correct"] and res[i]["correct"])
-            unparsed_ref_to_correct = sum(1 for i in ids if ref[i]["pred"] is None and res[i]["correct"])
-            correct_to_unparsed_test = sum(1 for i in ids if ref[i]["correct"] and res[i]["pred"] is None)
-            mcnemar_p = format_p(binomtest(c2w, c2w + w2c, 0.5).pvalue if (c2w + w2c) > 0 else 1.0)
-
-            # Exact text match & divergence token analysis
-            exact = sum(1 for i in ids if res[i]["text"] == ref[i]["text"]) / n
-            divs = calc_divergences(res, ref, ids)
-            med_div = format_median(divs)
-            n_div_0 = sum(1 for d in divs if d == 0)
-            n_div_1 = sum(1 for d in divs if d == 1)
-
-            # Truncation count (GSM8K hitting 320 token ceiling)
-            n_truncated_or_max = ""
-            if task == "gsm8k":
-                trunc_count = 0
-                for i in ids:
-                    toks = get_tokens(res[i])
-                    if len(toks) >= 320:
-                        trunc_count += 1
-                n_truncated_or_max = trunc_count
-
-            lo, hi = boot_ci([int(res[i]["pred"] == ref[i]["pred"]) for i in ids])
-
-            t1_rows.append(dict(
+            row_csv = dict(
                 setup=setup, task=task, n=n,
-                acc=round(acc, 3), ref_acc=round(racc, 3), strict_acc=round(strict_acc, 3),
-                n_unparsed=n_unparsed, parse_rate=round(parse_rate, 3), acc_parsed=round(acc_parsed, 3),
-                valid_agree=round(valid_agree, 3), all_outcome_agree=round(all_outcome_agree, 3),
-                agree_ci=f"[{lo:.3f}, {hi:.3f}]", n_both_valid=n_both_valid, n_joint_invalid=n_joint_invalid,
-                flips_c2w=c2w, flips_w2c=w2c,
-                unparsed_ref_to_correct=unparsed_ref_to_correct, correct_to_unparsed_test=correct_to_unparsed_test,
-                mcnemar_p=mcnemar_p, exact_text=round(exact, 3),
-                median_first_div_token=med_div, n_diverged=len(divs),
-                n_div_at_0=n_div_0, n_div_at_1=n_div_1,
-                n_truncated_or_max=n_truncated_or_max,
+                n_correct=n_correct, task_acc=task_acc,
+                n_unparsed=n_unparsed, parse_rate=parse_rate,
+                acc_parsed_num_den=f"{c_parsed}/{n_valid}",
+                acc_parsed=acc_parsed_val,
+                strict_n_correct=strict_n_correct, strict_acc=strict_acc,
+                n_at_token_cap=n_at_token_cap, cap_source=cap_source
+            )
+            t_parsing_rows.append(row_csv)
+
+            row_md = dict(
+                setup=setup, task=task, n=n,
+                task_acc=task_acc,
+                n_unparsed=n_unparsed, parse_rate=parse_rate,
+                acc_parsed=format_frac(c_parsed, n_valid),
+                strict_acc=format_frac(strict_n_correct, n),
+                n_at_token_cap=n_at_token_cap, cap_source=cap_source,
                 gpu=get_gpu_label(setup, d["meta"])
-            ))
+            )
+            t_parsing_md_rows.append(row_md)
 
-    t1_rows.sort(key=lambda r: (r["task"], r["setup"]))
-
-    # Write Table 1 to results/summary.csv
-    with open(os.path.join(RD, "summary.csv"), "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=list(t1_rows[0].keys()))
-        w.writeheader()
-        w.writerows(t1_rows)
-
-    t1_cols = [
-        "setup", "task", "n", "acc", "ref_acc", "strict_acc",
-        "n_unparsed", "parse_rate", "acc_parsed",
-        "valid_agree", "all_outcome_agree", "agree_ci", "n_both_valid", "n_joint_invalid",
-        "flips_c2w", "flips_w2c", "unparsed_ref_to_correct", "correct_to_unparsed_test",
-        "mcnemar_p", "exact_text", "median_first_div_token", "n_diverged",
-        "n_div_at_0", "n_div_at_1", "n_truncated_or_max", "gpu"
-    ]
+    t_parsing_rows.sort(key=lambda r: (r["task"], r["setup"]))
+    t_parsing_md_rows.sort(key=lambda r: (r["task"], r["setup"]))
+    write_csv(os.path.join(RD, "summary_parsing.csv"), t_parsing_rows)
 
     # =========================================================================
-    # TABLE 2: Direct Matched-Dtype Native CPU vs. Browser Comparisons (RQ1)
+    # TABLE 2 / CSV 2: Direct Matched-Dtype Comparisons (RQ1)
     # =========================================================================
     t2_pairs = [
         ("browser/tjs-webgpu/fp16/intel-chrome", "native-node-cpu/fp16"),
@@ -258,7 +241,9 @@ def main():
         ("browser/tjs-webgpu/q4f16/nvidia-chrome", "native-node-cpu/q4f16"),
         ("browser/tjs-wasm/q4/cpu-chrome-check", "native-node-cpu/q4"),
     ]
-    t2_rows = []
+    t_matched_rows = []
+    t_matched_md_rows = []
+
     for b_setup, n_setup in t2_pairs:
         if b_setup not in runs or n_setup not in runs:
             continue
@@ -269,37 +254,70 @@ def main():
             if not ids:
                 continue
             n = len(ids)
-            b_acc = sum(b_map[i]["correct"] for i in ids) / n
-            n_acc = sum(n_map[i]["correct"] for i in ids) / n
-            all_agree = sum(1 for i in ids if b_map[i]["pred"] == n_map[i]["pred"]) / n
+            b_correct = sum(b_map[i]["correct"] for i in ids)
+            n_correct = sum(n_map[i]["correct"] for i in ids)
+            b_acc = round(b_correct / n, 4)
+            n_acc = round(n_correct / n, 4)
+
             both_valid = [i for i in ids if b_map[i]["pred"] is not None and n_map[i]["pred"] is not None]
             n_both_valid = len(both_valid)
-            v_agree = sum(1 for i in both_valid if b_map[i]["pred"] == n_map[i]["pred"]) / n_both_valid if n_both_valid > 0 else 0.0
-            exact_txt = sum(1 for i in ids if b_map[i]["text"] == n_map[i]["text"]) / n
-            exact_ids = sum(1 for i in ids if b_map[i].get("ids") is not None and b_map[i].get("ids") == n_map[i].get("ids")) / n
+            v_agree_count = sum(1 for i in both_valid if b_map[i]["pred"] == n_map[i]["pred"])
+            v_agree_pct = round(v_agree_count / n_both_valid, 4) if n_both_valid > 0 else 0.0
 
-            divs = calc_divergences(b_map, n_map, ids)
+            all_agree_count = sum(1 for i in ids if b_map[i]["pred"] == n_map[i]["pred"])
+            all_agree_pct = round(all_agree_count / n, 4)
+
+            exact_txt_count = sum(1 for i in ids if b_map[i]["text"] == n_map[i]["text"])
+            exact_txt_pct = round(exact_txt_count / n, 4)
+
+            exact_ids_count = sum(1 for i in ids if b_map[i].get("ids") is not None and b_map[i].get("ids") == n_map[i].get("ids"))
+            exact_ids_pct = round(exact_ids_count / n, 4)
+
+            # Token divergence on raw tokens across ALL paired items
+            divs = []
+            for i in ids:
+                fd = first_div(b_map[i]["ids"], n_map[i]["ids"])
+                if fd is not None:
+                    divs.append(fd)
             med_div = format_median(divs)
             n_div_0 = sum(1 for d in divs if d == 0)
+            n_div_1 = sum(1 for d in divs if d == 1)
 
-            t2_rows.append(dict(
+            row_csv = dict(
                 browser_setup=b_setup, native_ref_setup=n_setup, task=task, n=n,
-                browser_acc=round(b_acc, 3), native_acc=round(n_acc, 3),
-                valid_agree=round(v_agree, 3), all_outcome_agree=round(all_agree, 3),
-                exact_text=round(exact_txt, 3), exact_token_ids=round(exact_ids, 3),
-                median_first_div_token=med_div, n_diverged=len(divs), n_div_at_0=n_div_0,
-                n_both_valid=n_both_valid
-            ))
+                browser_acc=b_acc, native_acc=n_acc,
+                valid_agree_num_den=f"{v_agree_count}/{n_both_valid}",
+                valid_agree=v_agree_pct,
+                all_outcome_agree_num_den=f"{all_agree_count}/{n}",
+                all_outcome_agree=all_agree_pct,
+                exact_text_num_den=f"{exact_txt_count}/{n}",
+                exact_text=exact_txt_pct,
+                exact_token_ids_num_den=f"{exact_ids_count}/{n}",
+                exact_token_ids=exact_ids_pct,
+                median_first_div_token=med_div, n_diverged=len(divs),
+                n_div_at_0=n_div_0, n_div_at_1=n_div_1,
+                div_source="raw_token_ids", n_both_valid=n_both_valid
+            )
+            t_matched_rows.append(row_csv)
 
-    t2_rows.sort(key=lambda r: (r["task"], r["browser_setup"]))
-    t2_cols = [
-        "browser_setup", "native_ref_setup", "task", "n",
-        "browser_acc", "native_acc", "valid_agree", "all_outcome_agree",
-        "exact_text", "exact_token_ids", "median_first_div_token", "n_diverged", "n_div_at_0", "n_both_valid"
-    ]
+            row_md = dict(
+                browser_setup=b_setup, native_ref_setup=n_setup, task=task, n=n,
+                browser_acc=b_acc, native_acc=n_acc,
+                valid_agree=format_frac(v_agree_count, n_both_valid),
+                all_outcome_agree=format_frac(all_agree_count, n),
+                exact_text=format_frac(exact_txt_count, n),
+                exact_token_ids=format_frac(exact_ids_count, n),
+                median_first_div_token=med_div, n_diverged=len(divs),
+                n_div_at_0=n_div_0, n_div_at_1=n_div_1
+            )
+            t_matched_md_rows.append(row_md)
+
+    t_matched_rows.sort(key=lambda r: (r["task"], r["browser_setup"]))
+    t_matched_md_rows.sort(key=lambda r: (r["task"], r["browser_setup"]))
+    write_csv(os.path.join(RD, "summary_matched.csv"), t_matched_rows)
 
     # =========================================================================
-    # TABLE 3: Cross-GPU Pairwise Consistency: Intel UHD vs. NVIDIA RTX 2050 (RQ2)
+    # TABLE 3 / CSV 3: Cross-Adapter Pairwise Consistency (RQ2: Intel vs. NVIDIA)
     # =========================================================================
     t3_configs = [
         ("tjs-webgpu/fp16", "browser/tjs-webgpu/fp16/intel-chrome", "browser/tjs-webgpu/fp16/nvidia-chrome"),
@@ -307,7 +325,9 @@ def main():
         ("webllm/q4f16_1", "browser/webllm/q4f16_1/intel-chrome", "browser/webllm/q4f16_1/nvidia-chrome"),
         ("webllm/q4f32_1", "browser/webllm/q4f32_1/intel-chrome", "browser/webllm/q4f32_1/nvidia-chrome"),
     ]
-    t3_rows = []
+    t_cross_rows = []
+    t_cross_md_rows = []
+
     for build, intel_setup, nvidia_setup in t3_configs:
         if intel_setup not in runs or nvidia_setup not in runs:
             continue
@@ -318,98 +338,336 @@ def main():
             if not ids:
                 continue
             n = len(ids)
-            i_acc = sum(i_map[i]["correct"] for i in ids) / n
-            nv_acc = sum(n_map[i]["correct"] for i in ids) / n
-            all_agree = sum(1 for i in ids if i_map[i]["pred"] == n_map[i]["pred"]) / n
+            i_acc = round(sum(i_map[i]["correct"] for i in ids) / n, 4)
+            nv_acc = round(sum(n_map[i]["correct"] for i in ids) / n, 4)
+
             both_valid = [i for i in ids if i_map[i]["pred"] is not None and n_map[i]["pred"] is not None]
             n_both_valid = len(both_valid)
-            v_agree = sum(1 for i in both_valid if i_map[i]["pred"] == n_map[i]["pred"]) / n_both_valid if n_both_valid > 0 else 0.0
-            exact_txt = sum(1 for i in ids if i_map[i]["text"] == n_map[i]["text"]) / n
+            v_agree_count = sum(1 for i in both_valid if i_map[i]["pred"] == n_map[i]["pred"])
+            v_agree_pct = round(v_agree_count / n_both_valid, 4) if n_both_valid > 0 else 0.0
+
+            all_agree_count = sum(1 for i in ids if i_map[i]["pred"] == n_map[i]["pred"])
+            all_agree_pct = round(all_agree_count / n, 4)
+
+            exact_txt_count = sum(1 for i in ids if i_map[i]["text"] == n_map[i]["text"])
+            exact_txt_pct = round(exact_txt_count / n, 4)
+
             n_diff_pred = sum(1 for i in ids if i_map[i]["pred"] != n_map[i]["pred"])
             n_diff_txt = sum(1 for i in ids if i_map[i]["text"] != n_map[i]["text"])
 
-            t3_rows.append(dict(
-                build=build, task=task, n=n,
-                intel_acc=round(i_acc, 3), nvidia_acc=round(nv_acc, 3),
-                valid_agree=round(v_agree, 3), all_outcome_agree=round(all_agree, 3),
-                exact_text=round(exact_txt, 3), n_both_valid=n_both_valid,
-                n_diff_predictions=n_diff_pred, n_diff_text=n_diff_txt
-            ))
+            # Token divergence
+            has_raw = (i_map[ids[0]].get("ids") is not None) and (n_map[ids[0]].get("ids") is not None)
+            div_source = "raw_token_ids" if has_raw else "retokenized_text"
+            divs = []
+            for i in ids:
+                if has_raw:
+                    fd = first_div(i_map[i]["ids"], n_map[i]["ids"])
+                else:
+                    t1 = TOKENIZER.encode(i_map[i].get("text", ""), add_special_tokens=False)
+                    t2 = TOKENIZER.encode(n_map[i].get("text", ""), add_special_tokens=False)
+                    fd = first_div(t1, t2)
+                if fd is not None:
+                    divs.append(fd)
+            med_div = format_median(divs)
+            n_div_0 = sum(1 for d in divs if d == 0)
+            n_div_1 = sum(1 for d in divs if d == 1)
 
-    t3_rows.sort(key=lambda r: (r["task"], r["build"]))
-    t3_cols = [
+            row_csv = dict(
+                build=build, task=task, n=n,
+                intel_acc=i_acc, nvidia_acc=nv_acc,
+                valid_agree_num_den=f"{v_agree_count}/{n_both_valid}",
+                valid_agree=v_agree_pct,
+                all_outcome_agree_num_den=f"{all_agree_count}/{n}",
+                all_outcome_agree=all_agree_pct,
+                exact_text_num_den=f"{exact_txt_count}/{n}",
+                exact_text=exact_txt_pct,
+                n_both_valid=n_both_valid,
+                n_diff_predictions=n_diff_pred, n_diff_text=n_diff_txt,
+                median_first_div_token=med_div, n_diverged=len(divs),
+                n_div_at_0=n_div_0, n_div_at_1=n_div_1,
+                div_source=div_source
+            )
+            t_cross_rows.append(row_csv)
+
+            row_md = dict(
+                build=build, task=task, n=n,
+                intel_acc=i_acc, nvidia_acc=nv_acc,
+                valid_agree=format_frac(v_agree_count, n_both_valid),
+                all_outcome_agree=format_frac(all_agree_count, n),
+                exact_text=format_frac(exact_txt_count, n),
+                n_both_valid=n_both_valid,
+                n_diff_predictions=n_diff_pred, n_diff_text=n_diff_txt,
+                median_first_div_token=med_div, n_diverged=len(divs),
+                div_source=div_source
+            )
+            t_cross_md_rows.append(row_md)
+
+    t_cross_rows.sort(key=lambda r: (r["task"], r["build"]))
+    t_cross_md_rows.sort(key=lambda r: (r["task"], r["build"]))
+    write_csv(os.path.join(RD, "summary_cross_adapter.csv"), t_cross_rows)
+
+    # =========================================================================
+    # TABLE 4 / CSV 4: Primary Comparison vs. Full-Precision Reference (fp32)
+    # =========================================================================
+    t_primary_rows = []
+    t_primary_md_rows = []
+
+    for setup, d in sorted(runs.items()):
+        res = {r["id"]: r for r in d["results"]}
+        for task in ["gsm8k", "mmlu"]:
+            ids = [i for i, r in res.items() if r["task"] == task and i in ref]
+            if not ids:
+                continue
+            n = len(ids)
+            acc = round(sum(res[i]["correct"] for i in ids) / n, 4)
+            racc = round(sum(ref[i]["correct"] for i in ids) / n, 4)
+
+            # Unparsed and valid
+            n_unparsed = sum(1 for i in ids if res[i]["pred"] is None)
+            parse_rate = round((n - n_unparsed) / n, 4)
+            n_valid = n - n_unparsed
+            c_parsed = sum(res[i]["correct"] for i in ids if res[i]["pred"] is not None)
+            acc_parsed_val = round(c_parsed / n_valid, 4) if n_valid > 0 else 0.0
+
+            # Strict accuracy
+            strict_correct = 0
+            for i in ids:
+                txt = res[i].get("text", "")
+                sp = strict_mmlu(txt) if task == "mmlu" else strict_gsm(txt)
+                if sp == res[i]["gold"]:
+                    strict_correct += 1
+            strict_acc = round(strict_correct / n, 4)
+
+            # Agreement
+            both_valid = [i for i in ids if res[i]["pred"] is not None and ref[i]["pred"] is not None]
+            n_both_valid = len(both_valid)
+            v_agree_count = sum(1 for i in both_valid if res[i]["pred"] == ref[i]["pred"])
+            v_agree_pct = round(v_agree_count / n_both_valid, 4) if n_both_valid > 0 else 0.0
+
+            all_agree_count = sum(1 for i in ids if res[i]["pred"] == ref[i]["pred"])
+            all_agree_pct = round(all_agree_count / n, 4)
+            n_joint_invalid = sum(1 for i in ids if res[i]["pred"] is None and ref[i]["pred"] is None)
+
+            # Flips
+            c2w = sum(1 for i in ids if ref[i]["correct"] and not res[i]["correct"])
+            w2c = sum(1 for i in ids if not ref[i]["correct"] and res[i]["correct"])
+            unparsed_ref_to_correct = sum(1 for i in ids if ref[i]["pred"] is None and res[i]["correct"])
+            correct_to_unparsed_test = sum(1 for i in ids if ref[i]["correct"] and res[i]["pred"] is None)
+            mcnemar_p_val = binomtest(c2w, c2w + w2c, 0.5).pvalue if (c2w + w2c) > 0 else 1.0
+            mcnemar_p = format_p(mcnemar_p_val)
+
+            # Exact text
+            exact_txt_count = sum(1 for i in ids if res[i]["text"] == ref[i]["text"])
+            exact_txt_pct = round(exact_txt_count / n, 4)
+
+            # Divergence tokens across ALL paired items
+            has_raw = (res[ids[0]].get("ids") is not None) and (ref[ids[0]].get("ids") is not None)
+            div_source = "raw_token_ids" if has_raw else "retokenized_text"
+            divs = []
+            for i in ids:
+                if has_raw:
+                    fd = first_div(res[i]["ids"], ref[i]["ids"])
+                else:
+                    t1 = TOKENIZER.encode(res[i].get("text", ""), add_special_tokens=False)
+                    t2 = TOKENIZER.encode(ref[i].get("text", ""), add_special_tokens=False)
+                    fd = first_div(t1, t2)
+                if fd is not None:
+                    divs.append(fd)
+            med_div = format_median(divs)
+            n_div_0 = sum(1 for d in divs if d == 0)
+            n_div_1 = sum(1 for d in divs if d == 1)
+
+            # Truncation cap count
+            cap_limit = 5 if task == "mmlu" else 320
+            n_at_token_cap = 0
+            for i in ids:
+                if res[i].get("ids") is not None:
+                    tok_len = len(res[i]["ids"])
+                else:
+                    tok_len = len(TOKENIZER.encode(res[i].get("text", ""), add_special_tokens=False))
+                if tok_len >= cap_limit:
+                    n_at_token_cap += 1
+
+            lo, hi = boot_ci([int(res[i]["pred"] == ref[i]["pred"]) for i in ids])
+
+            row_csv = dict(
+                setup=setup, task=task, n=n,
+                acc=acc, ref_acc=racc, strict_acc=strict_acc,
+                n_unparsed=n_unparsed, parse_rate=parse_rate,
+                acc_parsed_num_den=f"{c_parsed}/{n_valid}", acc_parsed=acc_parsed_val,
+                valid_agree_num_den=f"{v_agree_count}/{n_both_valid}", valid_agree=v_agree_pct,
+                all_outcome_agree_num_den=f"{all_agree_count}/{n}", all_outcome_agree=all_agree_pct,
+                agree_ci=f"[{lo:.3f}, {hi:.3f}]", n_both_valid=n_both_valid, n_joint_invalid=n_joint_invalid,
+                flips_c2w=c2w, flips_w2c=w2c,
+                unparsed_ref_to_correct=unparsed_ref_to_correct, correct_to_unparsed_test=correct_to_unparsed_test,
+                mcnemar_p_unadjusted=mcnemar_p_val, mcnemar_p=mcnemar_p,
+                exact_text_num_den=f"{exact_txt_count}/{n}", exact_text=exact_txt_pct,
+                median_first_div_token=med_div, n_diverged=len(divs),
+                n_div_at_0=n_div_0, n_div_at_1=n_div_1,
+                div_source=div_source, n_at_token_cap=n_at_token_cap,
+                gpu=get_gpu_label(setup, d["meta"])
+            )
+            t_primary_rows.append(row_csv)
+
+            row_md = dict(
+                setup=setup, task=task, n=n,
+                acc=acc, ref_acc=racc, strict_acc=strict_acc,
+                n_unparsed=n_unparsed, parse_rate=parse_rate,
+                acc_parsed=format_frac(c_parsed, n_valid),
+                valid_agree=format_frac(v_agree_count, n_both_valid),
+                all_outcome_agree=format_frac(all_agree_count, n),
+                agree_ci=f"[{lo:.3f}, {hi:.3f}]", n_both_valid=n_both_valid, n_joint_invalid=n_joint_invalid,
+                flips_c2w=c2w, flips_w2c=w2c,
+                unparsed_ref_to_correct=unparsed_ref_to_correct, correct_to_unparsed_test=correct_to_unparsed_test,
+                mcnemar_p=mcnemar_p, exact_text=format_frac(exact_txt_count, n),
+                median_first_div_token=med_div, n_diverged=len(divs),
+                n_div_at_0=n_div_0, n_div_at_1=n_div_1,
+                div_source=div_source, n_at_token_cap=n_at_token_cap,
+                gpu=get_gpu_label(setup, d["meta"])
+            )
+            t_primary_md_rows.append(row_md)
+
+    t_primary_rows.sort(key=lambda r: (r["task"], r["setup"]))
+    t_primary_md_rows.sort(key=lambda r: (r["task"], r["setup"]))
+
+    write_csv(os.path.join(RD, "summary_primary.csv"), t_primary_rows)
+    write_csv(os.path.join(RD, "summary.csv"), t_primary_rows)
+
+    # =========================================================================
+    # TABLE 5 / CSV 5: 22-Comparison Holm Step-Down Multiple-Testing Table
+    # =========================================================================
+    # Exactly 22 experimental comparisons: all 11 full non-reference runs x 2 tasks
+    # (Excludes reference run, repeat run, and 20-item diagnostic check)
+    t_holm_candidates = [
+        r for r in t_primary_rows
+        if r["setup"] != REF and "repeat" not in r["setup"] and "check" not in r["setup"]
+    ]
+    # Sort ascending by unadjusted p-value
+    t_holm_candidates.sort(key=lambda r: r["mcnemar_p_unadjusted"])
+    m_holm = len(t_holm_candidates)  # 22
+
+    t_holm_rows = []
+    t_holm_md_rows = []
+    cum_max = 0.0
+
+    for i, r in enumerate(t_holm_candidates):
+        rank = i + 1
+        multiplier = m_holm - i
+        adj_p = min(1.0, r["mcnemar_p_unadjusted"] * multiplier)
+        cum_max = max(cum_max, adj_p)
+        sig = cum_max < 0.05
+
+        row_csv = dict(
+            setup=r["setup"], task=r["task"],
+            flips_c2w=r["flips_c2w"], flips_w2c=r["flips_w2c"],
+            mcnemar_p_unadjusted=r["mcnemar_p_unadjusted"],
+            holm_rank=rank,
+            mcnemar_p_holm=cum_max,
+            significant_at_0_05=sig
+        )
+        t_holm_rows.append(row_csv)
+
+        row_md = dict(
+            setup=r["setup"], task=r["task"],
+            flips=f"c2w={r['flips_c2w']}, w2c={r['flips_w2c']}",
+            mcnemar_p_unadjusted=f"{r['mcnemar_p_unadjusted']:.6e}" if r['mcnemar_p_unadjusted'] < 0.001 else f"{r['mcnemar_p_unadjusted']:.4f}",
+            holm_rank=rank,
+            mcnemar_p_holm=f"{cum_max:.6e}" if cum_max < 0.001 else f"{cum_max:.4f}",
+            significant_at_0_05="Yes" if sig else "No"
+        )
+        t_holm_md_rows.append(row_md)
+
+    write_csv(os.path.join(RD, "summary_holm.csv"), t_holm_rows)
+
+    # =========================================================================
+    # Write results/summary.md containing all 5 tables
+    # =========================================================================
+    p_cols = [
+        "setup", "task", "n", "task_acc", "n_unparsed", "parse_rate",
+        "acc_parsed", "strict_acc", "n_at_token_cap", "cap_source", "gpu"
+    ]
+    m_cols = [
+        "browser_setup", "native_ref_setup", "task", "n",
+        "browser_acc", "native_acc", "valid_agree", "all_outcome_agree",
+        "exact_text", "exact_token_ids", "median_first_div_token", "n_diverged",
+        "n_div_at_0", "n_div_at_1"
+    ]
+    c_cols = [
         "build", "task", "n", "intel_acc", "nvidia_acc",
         "valid_agree", "all_outcome_agree", "exact_text",
-        "n_both_valid", "n_diff_predictions", "n_diff_text"
+        "n_both_valid", "n_diff_predictions", "n_diff_text",
+        "median_first_div_token", "n_diverged", "div_source"
+    ]
+    t1_cols = [
+        "setup", "task", "n", "acc", "ref_acc", "strict_acc",
+        "n_unparsed", "parse_rate", "acc_parsed",
+        "valid_agree", "all_outcome_agree", "agree_ci", "n_both_valid", "n_joint_invalid",
+        "flips_c2w", "flips_w2c", "unparsed_ref_to_correct", "correct_to_unparsed_test",
+        "mcnemar_p", "exact_text", "median_first_div_token", "n_diverged",
+        "n_div_at_0", "n_div_at_1", "div_source", "n_at_token_cap", "gpu"
+    ]
+    h_cols = [
+        "setup", "task", "flips", "mcnemar_p_unadjusted", "holm_rank", "mcnemar_p_holm", "significant_at_0_05"
     ]
 
-    # =========================================================================
-    # TABLE 4: Parsing & Truncation Audit (Strict vs. Permissive Extraction)
-    # =========================================================================
-    t4_rows = []
-    for r in t1_rows:
-        t4_rows.append(dict(
-            setup=r["setup"], task=r["task"], n=r["n"],
-            standard_acc=r["acc"], strict_acc=r["strict_acc"], acc_parsed=r["acc_parsed"],
-            parse_rate=r["parse_rate"], n_unparsed=r["n_unparsed"],
-            n_truncated_or_max=r["n_truncated_or_max"], gpu=r["gpu"]
-        ))
-    t4_rows.sort(key=lambda r: (r["task"], r["setup"]))
-    t4_cols = [
-        "setup", "task", "n", "standard_acc", "strict_acc", "acc_parsed",
-        "parse_rate", "n_unparsed", "n_truncated_or_max", "gpu"
-    ]
-
-    # =========================================================================
-    # Write results/summary.md
-    # =========================================================================
-    md_content = f"""# Benchmark Summary & Multi-Table Audit
+    md_content = f"""# Benchmark Summary & Multi-Table Static Audit
 
 **Reference Baseline:** `{REF}`  
 **Host Hardware:** Single Windows 11 Laptop — 13th Gen Intel(R) Core(TM) i5-13420H CPU, NVIDIA GeForce RTX 2050 (4 GB GDDR6), Intel(R) UHD Graphics (Gen-12LP), 8 GB RAM  
 **Software Environment:** Windows 11 x64, Google Chrome 139.0.0.0, Node.js v20+, Transformers.js 4.3.0, WebLLM 0.2.85  
+**Tokenizer Audit:** `{TOKENIZER_NAME}` (Snapshot Commit: `{TOKENIZER_COMMIT}`)  
 
 ---
 
 ## Table 1: Primary Comparison vs. Full-Precision Reference (`native-node-cpu/fp32`)
 
-*Evaluates all 28 experimental configurations against the native CPU fp32 baseline. Separates unparsed predictions, reports valid-only vs. all-outcome agreement, decomposes flips, and provides divergence token distributions.*
+*Evaluates all 28 experimental configurations against the native CPU fp32 baseline. Separates unparsed predictions, reports valid-only and all-outcome agreement with explicit fractions, decomposes flips, and tracks token sequence divergence across all paired items.*
 
-{make_md_table(t1_rows, t1_cols)}
+{make_md_table(t_primary_md_rows, t1_cols)}
 
 ---
 
 ## Table 2: Direct Matched-Dtype Comparisons: Native CPU vs. Browser (RQ1)
 
-*Directly tests runtime effects by holding model weights and quantization format strictly constant while changing only the runtime environment (Native Node.js CPU vs. Browser WebGPU/WASM).*
+*Evaluates runtime effects by matching model repository identifiers and dtypes between Native Node.js CPU and Browser WebGPU/WASM across all paired item evaluations. (Note: Repository IDs and dtypes were strictly matched; file SHA-256 hashes were not pinned across the Oct 8–9 and Oct 28 run dates).*
 
-{make_md_table(t2_rows, t2_cols)}
+{make_md_table(t_matched_md_rows, m_cols)}
 
-*Note on browser WASM check:* `browser/tjs-wasm/q4/cpu-chrome-check` demonstrates **100% exact text (20/20) and exact token-ID (20/20) match** against `native-node-cpu/q4` on the matched diagnostic subset, confirming the execution graph and prompt harness are identical between Node.js and browser WASM CPU.
+*Browser WASM CPU Verification:* `browser/tjs-wasm/q4/cpu-chrome-check` achieves **10/10 (100.00%) exact text and 10/10 (100.00%) exact token-ID match** on GSM8K, and **10/10 (100.00%) exact text and 10/10 (100.00%) exact token-ID match** on MMLU (with 8/8 valid parsed agreement) against `native-node-cpu/q4` on the matched diagnostic subset.
 
 ---
 
-## Table 3: Cross-GPU Pairwise Consistency: Intel UHD vs. NVIDIA RTX 2050 (RQ2)
+## Table 3: Cross-Adapter Pairwise Consistency: Intel UHD vs. NVIDIA RTX 2050 (RQ2)
 
 *Directly compares the Intel UHD Graphics integrated GPU run against the NVIDIA GeForce RTX 2050 discrete GPU run on the same laptop for each browser engine build.*
 
-{make_md_table(t3_rows, t3_cols)}
+{make_md_table(t_cross_md_rows, c_cols)}
 
-*Key takeaway:* Under 16-bit intermediate math (`webllm/q4f16_1`), inter-GPU numerical drift causes 5% of MMLU texts and 54% of GSM8K texts to diverge. Upgrading to 32-bit intermediate accumulation (`webllm/q4f32_1`) achieves **100% exact text agreement (300/300 items)** and 0 divergent predictions across Intel and NVIDIA GPUs.
+*Key takeaway:* Under `webllm/q4f16_1` (where MLC `model_dtype` is `float16`), cross-GPU numerical drift produces divergent text on 10/200 (5.0%) MMLU items and 54/100 (54.0%) GSM8K items. Under `webllm/q4f32_1` (where MLC `model_dtype` is `float32`), cross-adapter consistency reaches **100.00% exact text agreement (200/200 MMLU and 100/100 GSM8K)** with 0 divergent predictions.
 
 ---
 
 ## Table 4: Parsing & Truncation Audit (Strict vs. Permissive Extraction)
 
-*Evaluates the effect of regex extraction fallbacks and generation token limits across tasks.*
+*Evaluates regex extraction parse rates, accuracy restricted to valid parsed responses, strict marker extraction (`r'\\b([ABCD])\\b'` on MMLU, `r'answer is\\s*([\\-0-9,\\.]+)'` on GSM8K), and token limit saturation (5 tokens for MMLU, 320 tokens for GSM8K).*
 
-{make_md_table(t4_rows, t4_cols)}
+{make_md_table(t_parsing_md_rows, p_cols)}
+
+*Unparsed Response Findings:* In `native-node-cpu/fp32` on MMLU, 39/200 items failed letter-only extraction: 38 saturated the 5-token limit without emitting a standalone letter, and 1 terminated early at 3 tokens (`"WEP"` + EOS, ID `mmlu-1554`).
+
+---
+
+## Table 5: Holm Step-Down Multiple-Testing Correction (22 Hypotheses)
+
+*Controls family-wise error rate across all 22 primary experimental comparisons against `native-node-cpu/fp32` (11 full runs $\\times$ 2 tasks, excluding the reference run, repeatability check, and diagnostic 20-item subset).*
+
+{make_md_table(t_holm_md_rows, h_cols)}
 """
 
     with open(os.path.join(RD, "summary.md"), "w", encoding="utf-8") as f:
         f.write(md_content)
 
-    print("Successfully generated results/summary.md (4 tables) and results/summary.csv")
+    print("Successfully generated all 5 CSV summaries and results/summary.md")
 
 
 if __name__ == "__main__":

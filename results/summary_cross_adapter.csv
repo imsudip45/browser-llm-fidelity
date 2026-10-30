@@ -1,0 +1,9 @@
+build,task,n,intel_acc,nvidia_acc,valid_agree_num_den,valid_agree,all_outcome_agree_num_den,all_outcome_agree,exact_text_num_den,exact_text,n_both_valid,n_diff_predictions,n_diff_text,median_first_div_token,n_diverged,n_div_at_0,n_div_at_1,div_source
+tjs-webgpu/fp16,gsm8k,100,0.0,0.01,24/42,0.5714,59/100,0.59,27/100,0.27,42,41,73,2,73,25,10,raw_token_ids
+tjs-webgpu/q4f16,gsm8k,100,0.0,0.0,3/3,1.0,97/100,0.97,36/100,0.36,3,3,64,6,64,1,5,raw_token_ids
+webllm/q4f16_1,gsm8k,100,0.16,0.19,59/100,0.59,59/100,0.59,46/100,0.46,100,41,54,60.5,54,0,0,retokenized_text
+webllm/q4f32_1,gsm8k,100,0.18,0.18,100/100,1.0,100/100,1.0,100/100,1.0,100,0,0,,0,0,0,retokenized_text
+tjs-webgpu/fp16,mmlu,200,0.055,0.07,37/41,0.9024,170/200,0.85,128/200,0.64,41,30,72,1,72,31,13,raw_token_ids
+tjs-webgpu/q4f16,mmlu,200,0.025,0.02,11/12,0.9167,189/200,0.945,140/200,0.7,12,11,60,1,60,12,25,raw_token_ids
+webllm/q4f16_1,mmlu,200,0.42,0.43,194/199,0.9749,194/200,0.97,190/200,0.95,199,6,10,0,10,6,4,retokenized_text
+webllm/q4f32_1,mmlu,200,0.445,0.445,194/194,1.0,200/200,1.0,200/200,1.0,194,0,0,,0,0,0,retokenized_text

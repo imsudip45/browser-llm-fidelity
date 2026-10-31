@@ -2,7 +2,10 @@
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23760946.svg)](https://doi.org/10.5281/zenodo.23760946)
 
-**Authors:** Sudip Niroula (Lead / First Author) and Mandip Pokharel (Co-Author)  
+**Authors:** Sudip Niroula (Independent Researcher, Nepal) and Mandip Pokharel (Independent Researcher, Nepal)  
+**Manuscript PDF:** [`paper/browser-llm-fidelity.pdf`](paper/browser-llm-fidelity.pdf) | **LaTeX Source:** [`paper/main.tex`](paper/main.tex)  
+**Audited Analysis & Summary Exports (v1.1.0):** [https://doi.org/10.5281/zenodo.23828643](https://doi.org/10.5281/zenodo.23828643) (GitHub commit [`f2e35b7`](https://github.com/imsudip45/browser-llm-fidelity/tree/f2e35b70009a23e25e72caa63c64494b4395b461))  
+**Initial Raw Benchmark Archive (v1.0.0):** [https://doi.org/10.5281/zenodo.23760946](https://doi.org/10.5281/zenodo.23760946)
 **Status:** Completed benchmark dataset and reproducible test harness (October 2026)  
 **Model Tested:** `Qwen2.5-0.5B-Instruct`  
 **Setups Compared:** Native Node.js on CPU (`fp32`, `fp16`, `q4`, `q4f16`) vs. Web Browser (`Transformers.js v4.3.0` WASM & WebGPU, and `WebLLM v0.2.85` WebGPU)  

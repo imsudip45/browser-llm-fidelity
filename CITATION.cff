@@ -1,13 +1,15 @@
 cff-version: 1.2.0
-message: "If you use this software or empirical benchmark suite, please cite it as below."
+message: "If you use this evaluation harness, archived dataset, or analysis pipeline, please cite both the dataset archive and the case study manuscript."
+title: "Does Running a Small LLM in the Browser Change Its Answers? A Case Study of Native ONNX and Browser WebGPU Stacks on a Dual-GPU Laptop"
+version: 1.1.0
+doi: 10.5281/zenodo.23828643
+date-released: 2026-10-31
+url: "https://github.com/imsudip45/browser-llm-fidelity"
+repository-code: "https://github.com/imsudip45/browser-llm-fidelity"
 authors:
   - family-names: "Niroula"
     given-names: "Sudip"
+    affiliation: "Independent Researcher, Nepal"
   - family-names: "Pokharel"
     given-names: "Mandip"
-title: "Does Running a Small LLM in the Browser Change Its Answers? Comparing Native and WebGPU Inference Across GPUs"
-version: "v1.0.0"
-doi: "10.5281/zenodo.23760946"
-date-released: 2026-10-29
-license: MIT
-repository-code: "https://github.com/imsudip45/browser-llm-fidelity"
+    affiliation: "Independent Researcher, Nepal"
